@@ -1,0 +1,2 @@
+cat oneregion.sh | grep 'gcloud.*create' | grep -v "compute disks" | grep -v "compute routers nats" | tail -r | sed 's/create/delete/g' | sed 's/\\/-q/g' > oneregion-destroy.sh
+#source ./oneregion-destroy.sh
