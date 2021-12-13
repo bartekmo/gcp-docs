@@ -23,7 +23,7 @@ ZONE2=europe-west1-c
 #REGION_LABEL=euwest1
 #ZONE1_LABEL=euwest1-b
 #ZONE2_LABEL=euwest1-c
-REGION_LABEL=$(echo $REGION | tr -d '-' | sed 's/europe/eu/' | sed 's/australia/au/' | sed 's/northamerica/na/' | sed 's/southamerica/sa' )
+REGION_LABEL=$(echo $REGION | tr -d '-' | sed 's/europe/eu/' | sed 's/australia/au/' | sed 's/northamerica/na/' | sed 's/southamerica/sa/' )
 ZONE1_LABEL=$REGION_LABEL-${ZONE1: -1}
 ZONE2_LABEL=$REGION_LABEL-${ZONE2: -1}
 
@@ -472,3 +472,26 @@ next
 end"
 
 # TODO: Peering
+gcloud compute networks peerings create wrkld-peer-hub-to-prod-$REGION_LABEL --network=trust-vpc-$REGION_LABEL \
+  --peer-network=wrkld-prod-vpc-$REGION_LABEL \
+  --export-custom-routes
+
+gcloud compute networks peerings create wrkld-peer-hub-to-nonprod-$REGION_LABEL --network=trust-vpc-$REGION_LABEL \
+  --peer-network=wrkld-nonprod-vpc-$REGION_LABEL \
+  --export-custom-routes
+
+gcloud compute networks peerings create wrkld-peer-hub-to-dev-$REGION_LABEL --network=trust-vpc-$REGION_LABEL \
+  --peer-network=wrkld-dev-vpc-$REGION_LABEL \
+  --export-custom-routes
+
+gcloud compute networks peerings create wrkld-peer-prod-to-hub-$REGION_LABEL --network=wrkld-prod-vpc-$REGION_LABEL \
+  --peer-network=trust-vpc-$REGION_LABEL \
+  --import-custom-routes
+
+gcloud compute networks peerings create wrkld-peer-nonprod-to-hub-$REGION_LABEL --network=wrkld-nonprod-vpc-$REGION_LABEL \
+  --peer-network=trust-vpc-$REGION_LABEL \
+  --import-custom-routes
+
+gcloud compute networks peerings create wrkld-peer-dev-to-hub-$REGION_LABEL --network=wrkld-dev-vpc-$REGION_LABEL \
+  --peer-network=trust-vpc-$REGION_LABEL \
+  --import-custom-routes
