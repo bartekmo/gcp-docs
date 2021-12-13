@@ -28,10 +28,14 @@ ZONE1_LABEL=$REGION_LABEL-${ZONE1: -1}
 ZONE2_LABEL=$REGION_LABEL-${ZONE2: -1}
 
 ## FortiGate-connected VPC networks
-gcloud compute networks create vpc-external --subnet-mode=custom
-gcloud compute networks create vpc-internal-$REGION_LABEL --subnet-mode=custom
-gcloud compute networks create vpc-fgt-hasync --subnet-mode=custom
-gcloud compute networks create vpc-fgt-mgmt --subnet-mode=custom
+gcloud compute networks create vpc-external \
+  --subnet-mode=custom
+gcloud compute networks create vpc-internal-$REGION_LABEL \
+  --subnet-mode=custom
+gcloud compute networks create vpc-fgt-hasync \
+  --subnet-mode=custom
+gcloud compute networks create vpc-fgt-mgmt \
+  --subnet-mode=custom
 
 gcloud compute networks subnets create sb-ext-$REGION_LABEL \
   --network=vpc-external \
@@ -54,23 +58,23 @@ gcloud compute networks subnets create sb-fgt-mgmt-$REGION_LABEL \
   --range=$CIDR_MGMT
 
 ## workload spoke VPC networks
-gcloud compute networks create vpc-wrkld-p --subnet-mode=custom
-gcloud compute networks create vpc-wrkld-n --subnet-mode=custom
-gcloud compute networks create vpc-wrkld-d --subnet-mode=custom
+gcloud compute networks create vpc-wrkld-p \
+  --subnet-mode=custom
+gcloud compute networks create vpc-wrkld-n \
+  --subnet-mode=custom
+gcloud compute networks create vpc-wrkld-d \
+  --subnet-mode=custom
 
-gcloud compute networks subnets create sb-wrkld-p-$REGION_LABEL \
+gcloud compute networks subnets create sb-wrkld-p-$REGION_LABEL --region=$REGION \
   --network=vpc-wrkld-p \
-  --region=$REGION \
   --range=$CIDR_WRKLD_PROD
 
-gcloud compute networks subnets create sb-wrkld-n-$REGION_LABEL \
+gcloud compute networks subnets create sb-wrkld-n-$REGION_LABEL --region=$REGION \
   --network=vpc-wrkld-n \
-  --region=$REGION \
   --range=$CIDR_WRKLD_NONPROD
 
-gcloud compute networks subnets create sb-wrkld-d-$REGION_LABEL \
+gcloud compute networks subnets create sb-wrkld-d-$REGION_LABEL --region=$REGION \
   --network=vpc-wrkld-d \
-  --region=$REGION \
   --range=$CIDR_WRKLD_DEV
 
 
@@ -313,14 +317,14 @@ gcloud compute routers nats create nat-fgt-nat-$REGION_LABEL --region=$REGION \
 
 
 ## add instances to UMIGs
-gcloud compute instance-groups unmanaged create umig-fgtilb-$ZONE1_LABEL --zone=$ZONE1
-gcloud compute instance-groups unmanaged create umig-fgtilb-$ZONE2_LABEL --zone=$ZONE2
+gcloud compute instance-groups unmanaged create umig-fgt-$ZONE1_LABEL --zone=$ZONE1
+gcloud compute instance-groups unmanaged create umig-fgt-$ZONE2_LABEL --zone=$ZONE2
 
-gcloud compute instance-groups unmanaged add-instances umig-fgtilb-$ZONE1_LABEL \
+gcloud compute instance-groups unmanaged add-instances umig-fgt-$ZONE1_LABEL \
   --instances=vm-fgt-$ZONE1_LABEL \
   --zone=$ZONE1
 
-gcloud compute instance-groups unmanaged add-instances umig-fgtilb-$ZONE2_LABEL \
+gcloud compute instance-groups unmanaged add-instances umig-fgt-$ZONE2_LABEL \
   --instances=vm-fgt-$ZONE2_LABEL \
   --zone=$ZONE2
 
@@ -339,10 +343,10 @@ gcloud compute backend-services create bes-fgtilb-internal-$REGION_LABEL --regio
   --health-checks-region=$REGION
 
 gcloud compute backend-services add-backend bes-fgtilb-internal-$REGION_LABEL --region=$REGION \
-  --instance-group=umig-fgtilb-$ZONE1_LABEL \
+  --instance-group=umig-fgt-$ZONE1_LABEL \
   --instance-group-zone=$ZONE1
 gcloud compute backend-services add-backend bes-fgtilb-internal-$REGION_LABEL --region=$REGION\
-  --instance-group=umig-fgtilb-$ZONE2_LABEL \
+  --instance-group=umig-fgt-$ZONE2_LABEL \
   --instance-group-zone=$ZONE2
 
 gcloud compute forwarding-rules create fr-fgtilb-int-$REGION_LABEL-tcp --region=$REGION \
@@ -392,10 +396,10 @@ gcloud compute backend-services create bes-fgtilb-external-$REGION_LABEL --regio
   --health-checks-region=$REGION
 
 gcloud compute backend-services add-backend bes-fgtilb-external-$REGION_LABEL --region=$REGION \
-  --instance-group=umig-fgtilb-$ZONE1_LABEL \
+  --instance-group=umig-fgt-$ZONE1_LABEL \
   --instance-group-zone=$ZONE1
 gcloud compute backend-services add-backend bes-fgtilb-external-$REGION_LABEL --region=$REGION\
-  --instance-group=umig-fgtilb-$ZONE2_LABEL \
+  --instance-group=umig-fgt-$ZONE2_LABEL \
   --instance-group-zone=$ZONE2
 
 gcloud compute forwarding-rules create fr-fgtilb-ext-$REGION_LABEL-tcp --region=$REGION \
@@ -432,10 +436,10 @@ gcloud beta compute backend-services create bes-fgtelb-external-$REGION_LABEL --
   --health-checks-region=$REGION
 
 gcloud compute backend-services add-backend bes-fgtelb-external-$REGION_LABEL --region=$REGION \
-  --instance-group=umig-fgtilb-$ZONE1_LABEL \
+  --instance-group=umig-fgt-$ZONE1_LABEL \
   --instance-group-zone=$ZONE1
 gcloud compute backend-services add-backend bes-fgtelb-external-$REGION_LABEL --region=$REGION\
-  --instance-group=umig-fgtilb-$ZONE2_LABEL \
+  --instance-group=umig-fgt-$ZONE2_LABEL \
   --instance-group-zone=$ZONE2
 
 gcloud beta compute forwarding-rules create efr-fgtelb-serv1-$REGION_LABEL-l3 --region=$REGION \
