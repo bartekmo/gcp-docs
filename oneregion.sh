@@ -119,9 +119,6 @@ gcloud compute routers nats create untrust-nat-$REGION_LABEL --region=$REGION \
 ## Before creating instances and forwarding rules for this architecture
 ## you should reserve some static external and internal IP addresses.
 ## External
-## External IP to publish services to Internet. You can use more if you're
-## publishing more services requiring separate IP addresses
-gcloud compute addresses create untrust-serv1-eip-$REGION_LABEL --region=$REGION
 
 ## External management addresses for FortiGate instances. You will not need them
 ## if your infrastructure allows you to connect directly to internal management
@@ -384,8 +381,15 @@ gcloud compute instances describe fgt-vm-$ZONE1_LABEL --zone=$ZONE1 --format="ge
 ## Find out (and save for later use) active FortiGate public management IP
 EIP_MGMT=$(gcloud compute addresses describe fgt-mgmt-eip-$ZONE1_LABEL --region=$REGION --format="get(address)")
 
-## Verify connectivity to FortiGate and configure admin password
-ssh admin@$EIP_MGMT
+## Wait a moment, connect to FortiGate and configure admin password
+sleep 120 && ssh admin@$EIP_MGMT
+
+## (optional - for the smoothness of batch script)
+ls ~/.ssh/id_rsa.pub && ssh admin@$EIP_MGMT "config sys admin
+edit admin
+set ssh-public-key1 \"$(cat ~/.ssh/id_rsa.pub)\"
+next
+end"
 
 # IV. Health checks
 ## Create a common health check to be used for detecting active/passive instance
@@ -656,6 +660,10 @@ gcloud compute routes create rt-trust-to-wrkld-$REGION_LABEL-via-fgt \
 ## GA support level and L3_DEFAULT is still in preview, use separate forwarding
 ## rules for TCP and UDP and configure a target pool instead of backend service.
 
+## External IP to publish services to Internet. You can use more if you're
+## publishing more services requiring separate IP addresses
+gcloud compute addresses create fgtelb-serv1-eip-$REGION_LABEL --region=$REGION
+
 gcloud beta compute backend-services create fgtelb-bes-$REGION_LABEL --region=$REGION \
   --load-balancing-scheme=EXTERNAL \
   --protocol=UNSPECIFIED \
@@ -670,7 +678,7 @@ gcloud compute backend-services add-backend fgtelb-bes-$REGION_LABEL --region=$R
   --instance-group-zone=$ZONE2
 
 gcloud beta compute forwarding-rules create fgtelb-serv1-fwd-$REGION_LABEL-l3 --region=$REGION \
-  --address=untrust-serv1-eip-$REGION_LABEL \
+  --address=fgtelb-serv1-eip-$REGION_LABEL \
   --ip-protocol=L3_DEFAULT \
   --ports=ALL \
   --load-balancing-scheme=EXTERNAL \
