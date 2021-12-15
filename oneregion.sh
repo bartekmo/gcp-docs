@@ -744,7 +744,7 @@ edit port1
 set secondary-IP enable
 config secondaryip
 edit 11
-set ip $(gcloud compute addresses describe untrust-serv1-eip-$REGION_LABEL --format='get(address)' --region=$REGION) 255.255.255.255
+set ip $(gcloud compute addresses describe fgtelb-serv1-eip-$REGION_LABEL --format='get(address)' --region=$REGION) 255.255.255.255
 set allowaccess probe-response
 next
 end
