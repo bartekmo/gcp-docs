@@ -5,8 +5,10 @@
 # 5. region name if regional
 # 6. a/b if primary/secondary FGT related
 
-
+################################################################################
+#
 # I. VPCs and subnets
+# --------------------
 ## Define CIDR ranges for all networks created in this deployment and save into
 ## variables for convenience.
 CIDR_EXT=172.20.0.0/24          # untrusted network
@@ -40,24 +42,20 @@ gcloud compute networks create fgt-hasync-vpc \
 gcloud compute networks create fgt-mgmt-vpc \
   --subnet-mode=custom
 
-gcloud compute networks subnets create untrust-sb-$REGION_LABEL \
+gcloud compute networks subnets create untrust-sb-$REGION_LABEL --region=$REGION \
   --network=untrust-vpc-global \
-  --region=$REGION \
   --range=$CIDR_EXT
 
-gcloud compute networks subnets create trust-sb-$REGION_LABEL \
+gcloud compute networks subnets create trust-sb-$REGION_LABEL --region=$REGION \
   --network=trust-vpc-$REGION_LABEL \
-  --region=$REGION \
   --range=$CIDR_INT
 
-gcloud compute networks subnets create fgt-hasync-sb-$REGION_LABEL \
+gcloud compute networks subnets create fgt-hasync-sb-$REGION_LABEL --region=$REGION \
   --network=fgt-hasync-vpc \
-  --region=$REGION \
   --range=$CIDR_HASYNC
 
-gcloud compute networks subnets create fgt-mgmt-sb-$REGION_LABEL \
+gcloud compute networks subnets create fgt-mgmt-sb-$REGION_LABEL --region=$REGION \
   --network=fgt-mgmt-vpc \
-  --region=$REGION \
   --range=$CIDR_MGMT
 
 ## By default Google Cloud infrastructure will block all inbound connections.
@@ -114,8 +112,10 @@ gcloud compute routers nats create untrust-nat-$REGION_LABEL --region=$REGION \
   --nat-custom-subnet-ip-ranges=untrust-sb-$REGION_LABEL \
   --auto-allocate-nat-external-ips
 
-
+################################################################################
+#
 # II. Reserve static IP addresses
+# -------------------------------
 ## Before creating instances and forwarding rules for this architecture
 ## you should reserve some static external and internal IP addresses.
 ## External
@@ -152,8 +152,36 @@ gcloud compute addresses create fgt-ip-hasync-$ZONE2_LABEL --region=$REGION \
 IP_FGT_HASYNC_A=$(gcloud compute addresses describe fgt-ip-hasync-$ZONE1_LABEL --region=$REGION --format="get(address)")
 IP_FGT_HASYNC_B=$(gcloud compute addresses describe fgt-ip-hasync-$ZONE2_LABEL --region=$REGION --format="get(address)")
 
-# III. Create Fortigate instances
+################################################################################
+#
+# III. Create FortiGate service account
+# -------------------------------------
+## FortiGate instances can query Google API to resolve dynamic addresses in
+## firewall policy. This popular functionality allows you to build firewall policies
+## based on network tags and other metadata rather than on static IP addresses.
+## This section will create an IAM role and a service account to be used by FortiGates
+## with minimum required privilege set.
+##
+## Expect errors when deleting and re-deploying role
 
+GCP_PROJECT_ID=$(gcloud config get-value project)
+
+gcloud iam roles create FortigateSdnReader \
+  --project=$GCP_PROJECT_ID \
+  --title="FortiGate SDN Connector Role (read-only)" \
+  --permissions="compute.zones.list,compute.instances.list,container.clusters.list,container.nodes.list,container.pods.list,container.services.list"
+
+gcloud iam service-accounts create fortigatesdn-ro \
+  --display-name="FortiGate SDN Connector"
+
+gcloud projects add-iam-policy-binding $GCP_PROJECT_ID \
+  --member="serviceAccount:fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com" \
+  --role="projects/$GCP_PROJECT_ID/roles/FortigateSdnReader"
+
+################################################################################
+#
+# IV. Create Fortigate instances
+# ------------------------------
 ## Deploying FortiGate cloud architecture includes creating Google Cloud resources
 ## but also proper configuration of FortiGate instances. There are multiple ways to
 ## configure FortiGates. This guide provisions new instances with very basic
@@ -295,16 +323,6 @@ gcloud compute disks create fgt-logdisk-$ZONE2_LABEL --zone=$ZONE2 \
   --size=100 \
   --type=pd-ssd
 
-## In order to deploy VM instances you need to use base FortiGate image. Fortinet published set of images
-## which can be used by any Google Cloud user in fortigcp-project-001. You can find there image for
-## a specific version you want to use (the example script below selects the last BYOL image). If you do
-## not need to use a specific version you can use image family to let the cloud find the newest image
-## automatically.
-##
-## It is important to select image associated with your desired licensing (PAYG or BYOL). PAYG image names
-## start with "fortinet-fgtondemand".
-FGT_IMG_URL=$(gcloud compute images list --project fortigcp-project-001 --filter="name ~ fortinet-fgt- AND status:READY" --format="get(selfLink)" | sort -r | head -1)
-
 ## Licensing
 ## FortiGate instances in Google Cloud can be licensed in 2 different ways:
 ## - PAYG - the license is automatically attached to a new instance and your Billing Account
@@ -323,15 +341,31 @@ FGT_IMG_URL=$(gcloud compute images list --project fortigcp-project-001 --filter
 ## This example uses BYOL licensing. Please copy your *.lic files to local directory as lic1.lic
 ## and lic2.lic before proceeding.
 
+## In order to deploy VM instances you need to use base FortiGate image. Fortinet published set of images
+## which can be used by any Google Cloud user in fortigcp-project-001. You can find there image for
+## a specific version you want to use (the example script below selects the last BYOL image). If you do
+## not need to use a specific version you can use image family to let the cloud find the newest image
+## automatically.
+##
+## It is important to select image associated with your desired licensing (PAYG or BYOL). PAYG image names
+## start with "fortinet-fgtondemand".
+## Available image families:
+## - fortigate-64-byol - newest BYOL image ver. 6.4.*
+## - fortigate-64-payg - newest PAYG image ver. 6.4.*
+## - fortigate-70-byol - newest BYOL image ver. 7.0.*
+## - fortigate-70-payg - newest PAYG image ver. 7.0.*
+##
+## To find image for specific version use command like below
+#gcloud compute images list --project fortigcp-project-001 --filter="name ~ fortinet-fgt- AND status:READY" --format="get(selfLink)"
+
 ## Create FortiGate 4-nic instances using the image selected above.
 ## FortiGates will be provisioned with the basic configuration and with BYOL licenses from
 ## lic1.lic and lic2.lic files
-## TODO: is there really no way to enable MULTI_IP_SUBNET using gcloud ??
-## TODO: correct scope and service account
-## TODO: switch to image family
+## TODO: is --guest-os-features to enable MULTI_IP_SUBNET using gcloud deprecated??
 gcloud compute instances create fgt-vm-$ZONE1_LABEL --zone=$ZONE1 \
   --machine-type=e2-standard-4 \
-  --image=$FGT_IMG_URL \
+  --image-project=fortigcp-project-001 \
+  --image-family=fortigate-70-byol \
   --can-ip-forward \
   --network-interface="network=untrust-vpc-global,subnet=untrust-sb-$REGION_LABEL,no-address,private-network-ip=fgt-ip-untrust-$ZONE1_LABEL" \
   --network-interface="network=trust-vpc-$REGION_LABEL,subnet=trust-sb-$REGION_LABEL,no-address,private-network-ip=fgt-ip-trust-$ZONE1_LABEL" \
@@ -340,11 +374,13 @@ gcloud compute instances create fgt-vm-$ZONE1_LABEL --zone=$ZONE1 \
   --disk="auto-delete=yes,boot=no,device-name=logdisk,mode=rw,name=fgt-logdisk-$ZONE1_LABEL" \
   --tags=fgt \
   --metadata-from-file="user-data=metadata_active.txt,license=lic1.lic" \
-  --async
+  --service-account=fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com
+
 
 gcloud compute instances create fgt-vm-$ZONE2_LABEL --zone=$ZONE2 \
   --machine-type=e2-standard-4 \
-  --image=$FGT_IMG_URL \
+  --image-project=fortigcp-project-001 \
+  --image-family=fortigate-70-byol \
   --can-ip-forward \
   --network-interface="network=untrust-vpc-global,subnet=untrust-sb-$REGION_LABEL,no-address,private-network-ip=fgt-ip-untrust-$ZONE2_LABEL" \
   --network-interface="network=trust-vpc-$REGION_LABEL,subnet=trust-sb-$REGION_LABEL,no-address,private-network-ip=fgt-ip-trust-$ZONE2_LABEL" \
@@ -352,7 +388,8 @@ gcloud compute instances create fgt-vm-$ZONE2_LABEL --zone=$ZONE2 \
   --network-interface="network=fgt-mgmt-vpc,subnet=fgt-mgmt-sb-$REGION_LABEL,address=fgt-mgmt-eip-$ZONE2_LABEL" \
   --disk="auto-delete=yes,boot=no,device-name=logdisk,mode=rw,name=fgt-logdisk-$ZONE2_LABEL" \
   --tags=fgt \
-  --metadata-from-file="user-data=metadata_passive.txt,license=lic2.lic"
+  --metadata-from-file="user-data=metadata_passive.txt,license=lic2.lic" \
+  --service-account=fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com
 
 
 ## Create Unmanaged Instance Groups, which will be used by the load balancers
@@ -375,23 +412,37 @@ gcloud compute instance-groups unmanaged add-instances fgt-umig-$ZONE2_LABEL \
 ## By default you can log into the active FortiGate instance as user 'admin'
 ## using instance id as the password.
 
-## Find out active FortiGate instance id
-gcloud compute instances describe fgt-vm-$ZONE1_LABEL --zone=$ZONE1 --format="get(id)"
-
 ## Find out (and save for later use) active FortiGate public management IP
 EIP_MGMT=$(gcloud compute addresses describe fgt-mgmt-eip-$ZONE1_LABEL --region=$REGION --format="get(address)")
+
+
+## This section attempts the first connection to the newly-deployed FortiGate.
+## The first connection itself is important as it will trigger password change
+## enabling possibility to use SSH for configuration changes later in the script.
+## Obviously, echo is for batch script execution only, not for instructions.
+echo "-------------------------------- !!! -----------------------------------"
+echo "This script will now attempt to connect to your newly-deployed FortiGate CLI.
+Please log in as 'admin' using the instance id printed below as initial password
+and change the password to your own as prompted. When done, please logout using
+'exit' command to resume the deployment."
+## Find out active FortiGate instance id
+gcloud compute instances describe fgt-vm-$ZONE1_LABEL --zone=$ZONE1 --format="get(id)"
 
 ## Wait a moment, connect to FortiGate and configure admin password
 sleep 120 && ssh admin@$EIP_MGMT
 
-## (optional - for the smoothness of batch script)
+## The optional command below will install ssh key (if exists), so the subsequent
+## connections to modify configuration are passwordless.
 ls ~/.ssh/id_rsa.pub && ssh admin@$EIP_MGMT "config sys admin
 edit admin
 set ssh-public-key1 \"$(cat ~/.ssh/id_rsa.pub)\"
 next
 end"
 
-# IV. Health checks
+################################################################################
+#
+# V. Health checks
+# ----------------
 ## Create a common health check to be used for detecting active/passive instance
 gcloud compute health-checks create http fgt-hcheck-tcp8008 --region=$REGION \
   --port=8008 \
@@ -428,7 +479,10 @@ end"
 ##    you have to add proper routes to every interfaces targeted by a load balancer.
 
 
-# V. Internal Load Balancers
+################################################################################
+#
+# VI. Internal Load Balancers
+# ---------------------------
 ## Traffic is routed via FortiGates with use of Internal Load Balancers
 ## (see "Internal TCP/UDP load balancers as next hops"
 ## https://cloud.google.com/load-balancing/docs/internal/ilb-next-hop-overview)
@@ -536,7 +590,7 @@ gcloud compute routes create rt-trust-$REGION_LABEL-to-onprem-via-fgt \
 
 ################################################################################
 #
-# VI. Workload spoke VPC networks
+# VII. Workload spoke VPC networks
 # --------------------------------
 ## Deciding on granularity of workload VPC networks is a critical infrastructure decision
 ## because it will define the security domains visible to FortiGate firewalls. Any traffic
@@ -580,7 +634,7 @@ gcloud compute networks subnets create wrkld-dev-sb-$REGION_LABEL --region=$REGI
 
 ################################################################################
 #
-# VII. Peering workloads to trusted VPC network
+# VIII. Peering workloads to trusted VPC network
 # ---------------------------------------------
 ## Each workload VPC (spoke) needs to be peered with the Trusted VPC (hub) to enable
 ## traffic flow to, from and between spoke networks. To simplify route management,
@@ -648,7 +702,7 @@ gcloud compute routes create rt-trust-to-wrkld-$REGION_LABEL-via-fgt \
 
 ################################################################################
 #
-# VIII. External Load Balancer
+# IX. External Load Balancer
 # ----------------------------
 ## Inbound connections from Internet can be redirected to public services and
 ## protected by FortiGate's threat protection features. To direct the traffic
