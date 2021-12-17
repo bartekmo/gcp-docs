@@ -166,8 +166,7 @@ IP_FGT_HASYNC_B=$(gcloud compute addresses describe fgt-ip-hasync-$ZONE2_LABEL -
 
 GCP_PROJECT_ID=$(gcloud config get-value project)
 
-gcloud iam roles create FortigateSdnReader \
-  --project=$GCP_PROJECT_ID \
+gcloud iam roles create FortigateSdnReader --project=$GCP_PROJECT_ID \
   --title="FortiGate SDN Connector Role (read-only)" \
   --permissions="compute.zones.list,compute.instances.list,container.clusters.list,container.nodes.list,container.pods.list,container.services.list"
 
