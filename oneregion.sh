@@ -132,7 +132,7 @@ gcloud compute addresses create fgt-ip-trust-$ZONE1_LABEL --region=$REGION \
   --subnet=trust-sb-$REGION_LABEL
 gcloud compute addresses create fgt-ip-trust-$ZONE2_LABEL --region=$REGION \
   --subnet=trust-sb-$REGION_LABEL
-gcloud compute addresses create fgtilb-trust-ip-$REGION_LABEL --region=$REGION \
+gcloud compute addresses create fgtilb-ip-trust-$REGION_LABEL --region=$REGION \
   --subnet=trust-sb-$REGION_LABEL
 
 ## Internal addresses for untrusted NICs and load balancer
@@ -505,7 +505,7 @@ gcloud compute backend-services add-backend fgtilb-trust-bes-$REGION_LABEL --reg
   --instance-group-zone=$ZONE2
 
 gcloud compute forwarding-rules create fgtilb-trust-fwd-$REGION_LABEL-tcp --region=$REGION \
-  --address=fgtilb-trust-ip-$REGION_LABEL \
+  --address=fgtilb-ip-trust-$REGION_LABEL \
   --ip-protocol=TCP \
   --ports=ALL \
   --load-balancing-scheme=INTERNAL \
@@ -518,7 +518,7 @@ edit port2
 set secondary-IP enable
 config secondaryip
 edit 1
-set ip $(gcloud compute addresses describe fgtilb-trust-ip-$REGION_LABEL --format='get(address)' --region=$REGION) 255.255.255.255
+set ip $(gcloud compute addresses describe fgtilb-ip-trust-$REGION_LABEL --format='get(address)' --region=$REGION) 255.255.255.255
 set allowaccess probe-response
 next
 end
@@ -771,35 +771,35 @@ end"
 ## and the Cloud SQL is passed through (and inspected by) FortiGate firewall.
 
 ## Reserve the network range for the use by PSA
-gcloud compute addresses create wrkld-trust-psa-range \
-    --global \
-    --network=trust-vpc-$REGION_LABEL \
-    --purpose=VPC_PEERING \
-    --addresses=$(echo $CIDR_PSA | cut -d '/' -f 1) \
-    --prefix-length=$(echo $CIDR_PSA | cut -d '/' -f 2)
+gcloud compute addresses create wrkld-trust-psa-range --global \
+  --network=trust-vpc-$REGION_LABEL \
+  --purpose=VPC_PEERING \
+  --addresses=$(echo $CIDR_PSA | cut -d '/' -f 1) \
+  --prefix-length=$(echo $CIDR_PSA | cut -d '/' -f 2)
 
 ## Connect service networking to the trust VPC (might require enabling new API)
 gcloud services vpc-peerings connect \
-    --service=servicenetworking.googleapis.com \
-    --ranges=wrkld-trust-psa-range \
-    --network=trust-vpc-$REGION_LABEL
+  --service=servicenetworking.googleapis.com \
+  --ranges=wrkld-trust-psa-range \
+  --network=trust-vpc-$REGION_LABEL
 
 ## Create a CloudSQL instance
-gcloud beta sql instances create wrkld-priv-sql-$REGION_LABEL --region=$REGION \
-    --network=trust-vpc-$REGION_LABEL \
-    --no-assign-ip
+gcloud beta sql instances create wrkld-priv-sql-$REGION_LABEL \
+  --region=$REGION \
+  --network=trust-vpc-$REGION_LABEL \
+  --no-assign-ip
 
 ## Update the PSA peering to export custom routes from trust VPC
 gcloud compute networks peerings update servicenetworking-googleapis-com \
-    --export-custom-routes \
-    --network=trust-vpc-$REGION_LABEL
+  --export-custom-routes \
+  --network=trust-vpc-$REGION_LABEL
 
 ## Create routes for the PSA connection
 gcloud compute routes create rt-untrust-to-psa-$REGION_LABEL-via-fgt \
-    --network=untrust-vpc-global \
-    --next-hop-ilb=fgtilb-untrust-fwd-$REGION_LABEL-tcp \
-    --destination-range=$CIDR_PSA \
-    --next-hop-ilb-region=$REGION
+  --network=untrust-vpc-global \
+  --next-hop-ilb=fgtilb-untrust-fwd-$REGION_LABEL-tcp \
+  --destination-range=$CIDR_PSA \
+  --next-hop-ilb-region=$REGION
 
 ## add a route towards PSA to the FGT configuration
 ssh admin@$EIP_MGMT "config router static
