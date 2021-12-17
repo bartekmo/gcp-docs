@@ -374,7 +374,8 @@ gcloud compute instances create fgt-vm-$ZONE1_LABEL --zone=$ZONE1 \
   --disk="auto-delete=yes,boot=no,device-name=logdisk,mode=rw,name=fgt-logdisk-$ZONE1_LABEL" \
   --tags=fgt \
   --metadata-from-file="user-data=metadata_active.txt,license=lic1.lic" \
-  --service-account=fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com
+  --service-account=fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com \
+  --scopes=cloud-platform
 
 
 gcloud compute instances create fgt-vm-$ZONE2_LABEL --zone=$ZONE2 \
@@ -389,7 +390,8 @@ gcloud compute instances create fgt-vm-$ZONE2_LABEL --zone=$ZONE2 \
   --disk="auto-delete=yes,boot=no,device-name=logdisk,mode=rw,name=fgt-logdisk-$ZONE2_LABEL" \
   --tags=fgt \
   --metadata-from-file="user-data=metadata_passive.txt,license=lic2.lic" \
-  --service-account=fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com
+  --service-account=fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com \
+  --scopes=cloud-platform
 
 
 ## Create Unmanaged Instance Groups, which will be used by the load balancers
