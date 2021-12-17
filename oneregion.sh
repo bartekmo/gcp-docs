@@ -18,6 +18,7 @@ CIDR_MGMT=172.20.3.0/24         # FortiGate management network (note, this can b
 CIDR_WRKLD_PROD=10.0.0.0/16     # workload shared network - production
 CIDR_WRKLD_NONPROD=10.1.0.0/16  # workload shared network - non production
 CIDR_WRKLD_DEV=10.2.0.0/16      # workload shared network - development
+CIDR_PSA=10.127.0.0/16          # CloudSQL reserved range
 CIDR_WRKLD=10.0.0.0/9           # all regional workload networks (supernet)
 CIDR_ONPREM=192.168.0.0/16      # all on-prem networks (supernet)
 
@@ -749,5 +750,62 @@ set ip $(gcloud compute addresses describe fgtelb-serv1-eip-$REGION_LABEL --form
 set allowaccess probe-response
 next
 end
+next
+end"
+
+
+################################################################################
+#
+# X. Create CloudSQL and connect via Private Service Access
+# ---------------------------------------------------------
+##
+## Private Service Access feature allows direct access to selected managed
+## services (eg. Cloud SQL) directly from a VPC Network. This solution, while
+## secure and elegant, is challenging when access from multiple networks - including
+## on-prem - is required. FortiGate VM can be used as a gateway enabling private
+## access from all connected networks, being in the cloud or on-prem.
+##
+## In this design Cloud SQL network is not peered directly with the VPC hosting
+## workloads, but rather with the trusted firewall VPC. By adding proper configuration
+## to routing and peering, traffic between workload (spoke) VPCs, on-prem networks
+## and the Cloud SQL is passed through (and inspected by) FortiGate firewall.
+
+## Reserve the network range for the use by PSA
+gcloud compute addresses create wrkld-trust-psa-range \
+    --global \
+    --network=trust-vpc-$REGION_LABEL \
+    --purpose=VPC_PEERING \
+    --addresses=$(echo $CIDR_PSA | cut -d '/' -f 1) \
+    --prefix-length=$(echo $CIDR_PSA | cut -d '/' -f 2)
+
+## Connect service networking to the trust VPC (might require enabling new API)
+gcloud services vpc-peerings connect \
+    --service=servicenetworking.googleapis.com \
+    --ranges=wrkld-trust-psa-range \
+    --network=trust-vpc-$REGION_LABEL
+
+## Create a CloudSQL instance
+gcloud beta sql instances create wrkld-priv-sql-$REGION_LABEL --region=$REGION \
+    --network=trust-vpc-$REGION_LABEL \
+    --no-assign-ip
+
+## Update the PSA peering to export custom routes from trust VPC
+gcloud compute networks peerings update servicenetworking-googleapis-com \
+    --export-custom-routes \
+    --network=trust-vpc-$REGION_LABEL
+
+## Create routes for the PSA connection
+gcloud compute routes create rt-untrust-to-psa-$REGION_LABEL-via-fgt \
+    --network=untrust-vpc-global \
+    --next-hop-ilb=fgtilb-untrust-fwd-$REGION_LABEL-tcp \
+    --destination-range=$CIDR_PSA \
+    --next-hop-ilb-region=$REGION
+
+## add a route towards PSA to the FGT configuration
+ssh admin@$EIP_MGMT "config router static
+edit 2
+set dst $CIDR_PSA
+set device port2
+set gateway $(gcloud compute networks subnets describe trust-sb-$REGION_LABEL --region=$REGION --format="get(gatewayAddress)")
 next
 end"
