@@ -4,6 +4,8 @@ ZONE2=europe-west1-c
 REGION_LABEL=$(echo $REGION | tr -d '-' | sed 's/europe/eu/' | sed 's/australia/au/' | sed 's/northamerica/na/' | sed 's/southamerica/sa/' )
 ZONE1_LABEL=$REGION_LABEL-${ZONE1: -1}
 ZONE2_LABEL=$REGION_LABEL-${ZONE2: -1}
+GCP_PROJECT_ID=$(gcloud config get-value project)
+
 gcloud compute routes delete rt-untrust-to-psa-$REGION_LABEL-via-fgt -q
 gcloud beta sql instances delete wrkld-priv-sql-$REGION_LABEL -q
 gcloud compute addresses delete wrkld-trust-psa-range --global -q
@@ -35,7 +37,7 @@ gcloud compute instance-groups unmanaged delete fgt-umig-$ZONE2_LABEL --zone=$ZO
 gcloud compute instance-groups unmanaged delete fgt-umig-$ZONE1_LABEL --zone=$ZONE1 -q
 gcloud compute instances delete fgt-vm-$ZONE2_LABEL --zone=$ZONE2 -q
 gcloud compute instances delete fgt-vm-$ZONE1_LABEL --zone=$ZONE1 -q
-gcloud iam service-accounts delete fortigatesdn-ro -q
+gcloud iam service-accounts delete fortigatesdn-ro@GCP_PROJECT_ID.iam.gserviceaccount.com -q
 gcloud iam roles delete FortigateSdnReader --project=$GCP_PROJECT_ID -q
 gcloud compute addresses delete fgt-ip-hasync-$ZONE2_LABEL --region=$REGION -q
 gcloud compute addresses delete fgt-ip-hasync-$ZONE1_LABEL --region=$REGION -q
