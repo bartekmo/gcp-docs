@@ -37,8 +37,9 @@ gcloud compute instance-groups unmanaged delete fgt-umig-$ZONE2_LABEL --zone=$ZO
 gcloud compute instance-groups unmanaged delete fgt-umig-$ZONE1_LABEL --zone=$ZONE1 -q
 gcloud compute instances delete fgt-vm-$ZONE2_LABEL --zone=$ZONE2 -q
 gcloud compute instances delete fgt-vm-$ZONE1_LABEL --zone=$ZONE1 -q
-gcloud iam service-accounts delete fortigatesdn-ro@GCP_PROJECT_ID.iam.gserviceaccount.com -q
-gcloud iam roles delete FortigateSdnReader --project=$GCP_PROJECT_ID -q
+gcloud iam service-accounts delete fortigatesdn-ro@$GCP_PROJECT_ID.iam.gserviceaccount.com -q
+## deleting a role is as messy as deleting a project. don't do it 
+#gcloud iam roles delete FortigateSdnReader --project=$GCP_PROJECT_ID -q
 gcloud compute addresses delete fgt-ip-hasync-$ZONE2_LABEL --region=$REGION -q
 gcloud compute addresses delete fgt-ip-hasync-$ZONE1_LABEL --region=$REGION -q
 gcloud compute addresses delete fgtilb-ip-untrust-$REGION_LABEL --region=$REGION -q
