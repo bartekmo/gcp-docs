@@ -71,7 +71,7 @@ resources:
 - name: wrkld-spoke1-euwest1-allowall
   type: compute.v1.firewall
   properties:
-    network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    network: $(ref.spoke1-vpc-euwest1.selfLink)
     priority: 100
     sourceRanges:
     - 0.0.0.0/0
@@ -91,7 +91,7 @@ resources:
 - name: wrkld-spoke2-euwest1-allowall
   type: compute.v1.firewall
   properties:
-    network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+    network: $(ref.spoke2-vpc-euwest1.selfLink)
     priority: 100
     sourceRanges:
     - 0.0.0.0/0
