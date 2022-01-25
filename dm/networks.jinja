@@ -1,0 +1,84 @@
+resources:
+- name: untrust-vpc-global
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: untrust-sb-{{properties.shortRegion}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region}}
+    network: $(ref.untrust-vpc-global.selfLink)
+    ipCidrRange: 172.20.0.0/24
+
+- name: trust-vpc-{{properties.shortRegion}}
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: trust-sb-{{properties.shortRegion}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region}}
+    network: $(ref.trust-vpc-{{properties.shortRegion}}.selfLink)
+    ipCidrRange: 172.20.1.0/24
+
+- name: fgt-hasync-vpc
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: fgt-hasync-sb-{{properties.shortRegion}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region}}
+    network: $(ref.fgt-hasync-vpc.selfLink)
+    ipCidrRange: 172.20.2.0/24
+
+- name: fgt-mgmt-vpc
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: fgt-mgmt-sb-{{properties.shortRegion}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region}}
+    network: $(ref.fgt-mgmt-vpc.selfLink)
+    ipCidrRange: 172.20.3.0/24
+
+- name: wrkld-spoke1-vpc-{{properties.shortRegion}}
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: wrkld-spoke1-sb-{{properties.shortRegion}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region}}
+    network: $(ref.wrkld-spoke1-vpc-{{properties.shortRegion}}.selfLink)
+    ipCidrRange: 10.0.1.0/24
+- name: wrkld-spoke1-{{properties.shortRegion}}-allowall
+  type: compute.v1.firewall
+  properties:
+    network: $(ref.wrkld-spoke1-vpc-{{properties.shortRegion}}.selfLink)
+    priority: 100
+    sourceRanges:
+    - 0.0.0.0/0
+    allowed:
+    - IPProtocol: all
+
+- name: wrkld-spoke2-vpc-{{properties.shortRegion}}
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: wrkld-spoke2-sb-{{properties.shortRegion}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region}}
+    network: $(ref.wrkld-spoke2-vpc-{{properties.shortRegion}}.selfLink)
+    ipCidrRange: 10.0.2.0/24
+- name: wrkld-spoke2-{{properties.shortRegion}}-allowall
+  type: compute.v1.firewall
+  properties:
+    network: $(ref.wrkld-spoke2-vpc-{{properties.shortRegion}}.selfLink)
+    priority: 100
+    sourceRanges:
+    - 0.0.0.0/0
+    allowed:
+    - IPProtocol: all

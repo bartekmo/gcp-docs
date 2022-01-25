@@ -3,6 +3,8 @@ imports:
   name: fgcp-ha-ap-multilb.jinja
 - path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/FortiGate/architectures/300-peered-security-hub/deployment-manager/peerings.jinja
   name: peerings.jinja
+- path: networks.jinja
+- path: workload.jinja
 
 # Update and uncomment 4 lines below to deploy with your own licenses
 - path: ../licence1.lic
@@ -11,92 +13,12 @@ imports:
   name: lic2.lic
 
 resources:
-# Create a sample set of VPC Networks with subnets.
-# this helper template can also create 2 sample spoke VPCs
-# You will not need it if you re-use this configuration with your VPCs
-- name: untrust-vpc-global
-  type: compute.v1.network
-  properties:
-    autoCreateSubnetworks: false
-- name: untrust-sb-euwest1
-  type: compute.v1.subnetwork
+# Create a set of sample VPC networks and subnets
+- type: networks.jinja
+  name: Networks
   properties:
     region: europe-west1
-    network: $(ref.untrust-vpc-global.selfLink)
-    ipCidrRange: 172.20.0.0/24
-
-- name: trust-vpc-euwest1
-  type: compute.v1.network
-  properties:
-    autoCreateSubnetworks: false
-- name: trust-sb-euwest1
-  type: compute.v1.subnetwork
-  properties:
-    region: europe-west1
-    network: $(ref.trust-vpc-euwest1.selfLink)
-    ipCidrRange: 172.20.1.0/24
-
-- name: fgt-hasync-vpc
-  type: compute.v1.network
-  properties:
-    autoCreateSubnetworks: false
-- name: fgt-hasync-sb-euwest1
-  type: compute.v1.subnetwork
-  properties:
-    region: europe-west1
-    network: $(ref.fgt-hasync-vpc.selfLink)
-    ipCidrRange: 172.20.2.0/24
-
-- name: fgt-mgmt-vpc
-  type: compute.v1.network
-  properties:
-    autoCreateSubnetworks: false
-- name: fgt-mgmt-sb-euwest1
-  type: compute.v1.subnetwork
-  properties:
-    region: europe-west1
-    network: $(ref.fgt-mgmt-vpc.selfLink)
-    ipCidrRange: 172.20.3.0/24
-
-- name: wrkld-spoke1-vpc-euwest1
-  type: compute.v1.network
-  properties:
-    autoCreateSubnetworks: false
-- name: wrkld-spoke1-sb-euwest1
-  type: compute.v1.subnetwork
-  properties:
-    region: europe-west1
-    network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
-    ipCidrRange: 10.0.1.0/24
-- name: wrkld-spoke1-euwest1-allowall
-  type: compute.v1.firewall
-  properties:
-    network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
-    priority: 100
-    sourceRanges:
-    - 0.0.0.0/0
-    allowed:
-    - IPProtocol: all
-
-- name: wrkld-spoke2-vpc-euwest1
-  type: compute.v1.network
-  properties:
-    autoCreateSubnetworks: false
-- name: wrkld-spoke2-sb-euwest1
-  type: compute.v1.subnetwork
-  properties:
-    region: europe-west1
-    network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
-    ipCidrRange: 10.0.2.0/24
-- name: wrkld-spoke2-euwest1-allowall
-  type: compute.v1.firewall
-  properties:
-    network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
-    priority: 100
-    sourceRanges:
-    - 0.0.0.0/0
-    allowed:
-    - IPProtocol: all
+    shortRegion: euwest1
 
 # Peerings resource will peer all the VPCs together creating a hub-and-spoke topology
 - name: Peerings
@@ -170,7 +92,6 @@ resources:
       ipCidrRange: 172.20.3.0/24
       externalIP:
         name: mgmt
-# Add routes for spoke1 and spoke2 networks to FortiGates internal routing table
     fwConfig: |
       config router static
         edit 11
@@ -178,6 +99,10 @@ resources:
           set device port2
           set gateway 172.20.1.1
         next
+      end
+      config system dns
+        set primary 169.254.169.254
+        unset secondary
       end
       config firewall address
         edit "wrkld-spoke1-sb-euwest1"
@@ -205,14 +130,22 @@ resources:
           set filter "Tag=backend"
         next
         edit "gcp-ilb-backend"
-          set subnet 10.0.2.5 255.255.255.255
+          set type fqdn
+          set fqdn "app.wrkld-ilb-backend.il4.europe-west1.lb.forti-emea-se.internal"
+          set color 17
+        next
+        edit "wrkld-ilb-frontend"
+          set type fqdn
+          set fqdn "prx.wrkld-ilb-frontend.il4.europe-west1.lb.forti-emea-se.internal"
+          set color 17
         next
       end
       config firewall vip
         edit "serv1-to-frontend"
           set extip $(ref.fgt-serv1.address)
-          set mappedip "10.0.1.5"
-          set extintf "any"
+          set type fqdn
+          set extintf "port1"
+          set mapped-addr "wrkld-ilb-frontend"
           set portforward enable
           set extport 80
           set mappedport 8080
@@ -274,192 +207,52 @@ resources:
       end
 
 # example web server and a proxy
-- name: wrkld-tmpl-frontend-proxy
-  type: compute.v1.instanceTemplate
-  properties:
-    properties:
-      machineType: e2-micro
-      scheduling:
-        preemptible: true
-      disks:
-      - deviceName: boot
-        type: PERSISTENT
-        boot: true
-        initializeParams:
-          sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
-      networkInterfaces:
-      - network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
-        subnetwork: $(ref.wrkld-spoke1-sb-euwest1.selfLink)
-      serviceAccounts:
-      - email: default
-        scopes:
-        - https://www.googleapis.com/auth/logging.write
-        - https://www.googleapis.com/auth/monitoring.write
-      tags:
-        items:
-        - frontend
-      metadata:
-        items:
-        - key: startup-script
-          value: |
-            apt update && apt install nginx -y || exit
-            echo "server {
-              listen 8080;
-              location / {
-              proxy_set_header X-Real-IP \$remote_addr;
-              proxy_pass http://10.0.2.5;
-              }
-            }" > /etc/nginx/sites-available/proxy.conf
-            ln -s /etc/nginx/sites-available/proxy.conf /etc/nginx/sites-enabled/proxy
-            ln -sf /dev/console /var/log/nginx/error.log
-            ln -sf /dev/console /var/log/nginx/access.log
-            service nginx restart
 
-- name: wrkld-mig-frontend
-  type: compute.v1.instanceGroupManager
-  metadata:
-    dependsOn:
-    - fgt-fgt1
+- name: wrkld-dnspeer-spoke2-spoke1
+  type: dns.v1.managedZone
   properties:
-    zone: europe-west1-b
-    instanceTemplate: $(ref.wrkld-tmpl-frontend-proxy.selfLink)
-    baseInstanceName: wrkld-frontend-prx
-    targetSize: 2
-    autoHealingPolicies:
-    - healthCheck: $(ref.wrkld-hc-tcp80.selfLink)
-      initialDelaySec: 50
+    dnsName: "wrkld-ilb-backend.il4.europe-west1.lb.forti-emea-se.internal."
+    description: ""
+    peeringConfig:
+      targetNetwork:
+        networkUrl: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+    privateVisibilityConfig:
+      networks:
+      - networkUrl: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    visibility: private
+- name: wrkld-dnspeer-spoke1-hub
+  type: dns.v1.managedZone
+  properties:
+    dnsName: "wrkld-ilb-frontend.il4.europe-west1.lb.forti-emea-se.internal."
+    description: ""
+    peeringConfig:
+      targetNetwork:
+        networkUrl: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    privateVisibilityConfig:
+      networks:
+      - networkUrl: $(ref.untrust-vpc-global.selfLink)
+    visibility: private
+- name: wrkld-dnspeer-spoke2-hub
+  type: dns.v1.managedZone
+  properties:
+    dnsName: "wrkld-ilb-backend.il4.europe-west1.lb.forti-emea-se.internal."
+    description: ""
+    peeringConfig:
+      targetNetwork:
+        networkUrl: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    privateVisibilityConfig:
+      networks:
+      - networkUrl: $(ref.untrust-vpc-global.selfLink)
+    visibility: private
 
-- name: wrkld-bes-frontend
-  type: compute.v1.regionBackendService
+- name: Workload
+  type: workload.jinja
   properties:
     region: europe-west1
-    loadBalancingScheme: INTERNAL
-    backends:
-    - group: zones/europe-west1-b/instanceGroups/wrkld-mig-frontend
-      balancingMode: CONNECTION
-    healthChecks:
-    - $(ref.wrkld-hc-tcp80.selfLink)
-  metadata:
-    dependsOn:
-    - wrkld-mig-frontend
-
-- name: wrkld-ilb-frontend
-  type: compute.v1.forwardingRule
-  properties:
-    region: europe-west1
-    loadBalancingScheme: INTERNAL
-    IPAddress: 10.0.1.5
-    IPProtocol: TCP
-    ports:
-    - 8080
-    network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
-    subnetwork: $(ref.wrkld-spoke1-sb-euwest1.selfLink)
-    backendService: $(ref.wrkld-bes-frontend.selfLink)
-
-
-- name: wrkld-hc-tcp80
-  type: compute.v1.healthCheck
-  properties:
-    type: HTTP
-    checkIntervalSec: 15
-    timeoutSec: 10
-    unhealthyThreshold: 2
-    httpHealthCheck:
-      port: 80
-
-- name: wrkld-tmpl-backend
-  type: compute.v1.instanceTemplate
-  properties:
-    properties:
-      zone: europe-west1-b
-      machineType: e2-standard-2
-      scheduling:
-        preemptible: true
-      disks:
-      - deviceName: boot
-        type: PERSISTENT
-        boot: true
-        initializeParams:
-          sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
-      networkInterfaces:
-      - network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
-        subnetwork: $(ref.wrkld-spoke2-sb-euwest1.selfLink)
-      tags:
-        items:
-        - backend
-      serviceAccounts:
-      - email: default
-        scopes:
-        - https://www.googleapis.com/auth/logging.write
-        - https://www.googleapis.com/auth/monitoring.write
-      metadata:
-        items:
-        - key: startup-script
-          value: |
-            apt remove nginx-common nginx-core -y
-            apt update && apt install npm -y
-            mkdir /opt/web
-            cd /opt/web
-            npm install koa
-            ME=$(curl -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/name")
-            ZONE=$(curl -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/zone | cut -d '/' -f 4)
-            cat <<EOT > index.js
-            const Koa = require('koa');
-            const app = new Koa();
-            app.use( async (ctx, next) => {
-              ctx.body = \`<html><body><pre>
-               ---------------------------              --------------------------------
-              | From: \${String(ctx.request.header['x-real-ip']).padEnd(19,' ')} |    __ \\\\    |  To: \${'$ME'.padEnd(25,' ')} |
-              | Via:  \${String(ctx.request.ip).padEnd(19,' ')} |    -- /    |  Zone: \${'$ZONE'.padEnd(22,' ')} |
-               ---------------------------              --------------------------------
-              </pre></body></html>\`;
-            })
-            app.listen( 80 );
-            EOT
-            node .
-
-
-- name: wrkld-mig-backend
-  type: compute.v1.instanceGroupManager
-  metadata:
-    dependsOn:
-    - fgt-fgt1
-  properties:
-    zone: europe-west1-b
-    instanceTemplate: $(ref.wrkld-tmpl-backend.selfLink)
-    baseInstanceName: wrkld-backend-websrv
-    targetSize: 1
-    autoHealingPolicies:
-    - healthCheck: $(ref.wrkld-hc-tcp80.selfLink)
-      initialDelaySec: 120
-
-- name: wrkld-bes-backend
-  type: compute.v1.regionBackendService
-  properties:
-    region: europe-west1
-    loadBalancingScheme: INTERNAL
-    backends:
-    - group: zones/europe-west1-b/instanceGroups/wrkld-mig-backend
-      balancingMode: CONNECTION
-    healthChecks:
-    - $(ref.wrkld-hc-tcp80.selfLink)
-  metadata:
-    dependsOn:
-    - wrkld-mig-backend
-
-- name: wrkld-ilb-backend
-  type: compute.v1.forwardingRule
-  properties:
-    region: europe-west1
-    loadBalancingScheme: INTERNAL
-    IPAddress: 10.0.2.5
-    IPProtocol: TCP
-    ports:
-    - 80
-    network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
-    subnetwork: $(ref.wrkld-spoke2-sb-euwest1.selfLink)
-    backendService: $(ref.wrkld-bes-backend.selfLink)
-
+    frontendVpc: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    frontendSubnet: $(ref.wrkld-spoke1-sb-euwest1.selfLink)
+    backendVpc: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+    backendSubnet: $(ref.wrkld-spoke2-sb-euwest1.selfLink)
 
 outputs:
 - name: Temporary Admin Password

@@ -1,0 +1,184 @@
+resources:
+- name: wrkld-tmpl-frontend-proxy
+  type: compute.v1.instanceTemplate
+  properties:
+    properties:
+      machineType: e2-micro
+      scheduling:
+        preemptible: true
+      disks:
+      - deviceName: boot
+        type: PERSISTENT
+        boot: true
+        initializeParams:
+          sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
+      networkInterfaces:
+      - network: {{properties.frontendVpc}}
+        subnetwork: {{properties.frontendSubnet}}
+      serviceAccounts:
+      - email: default
+        scopes:
+        - https://www.googleapis.com/auth/logging.write
+        - https://www.googleapis.com/auth/monitoring.write
+      tags:
+        items:
+        - frontend
+      metadata:
+        items:
+        - key: startup-script
+          value: |
+            apt-get update -o "APT::Update::Error-Mode=any" && apt-get install nginx -y || (echo "APT ERROR REBOOTING"; sleep 20; reboot)
+            echo "server {
+              listen 8080;
+              location / {
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_pass http://app.wrkld-ilb-backend.il4.{{properties.region}}.lb.{{env.project}}.internal;
+              }
+            }" > /etc/nginx/sites-available/proxy.conf
+            ln -s /etc/nginx/sites-available/proxy.conf /etc/nginx/sites-enabled/proxy
+            ln -sf /dev/console /var/log/nginx/error.log
+            ln -sf /dev/console /var/log/nginx/access.log
+            service nginx restart
+
+- name: wrkld-mig-frontend
+  type: compute.v1.regionInstanceGroupManager
+  metadata:
+    dependsOn:
+    - wrkld-ilb-backend
+    - wrkld-dnspeer-spoke2-spoke1
+  properties:
+    region: {{properties.region}}
+    instanceTemplate: $(ref.wrkld-tmpl-frontend-proxy.selfLink)
+    baseInstanceName: wrkld-frontend-prx
+    targetSize: 2
+    autoHealingPolicies:
+    - healthCheck: $(ref.wrkld-hc-tcp80.selfLink)
+      initialDelaySec: 50
+
+- name: wrkld-bes-frontend
+  type: compute.v1.regionBackendService
+  properties:
+    region: {{properties.region}}
+    loadBalancingScheme: INTERNAL
+    backends:
+    - group: https://www.googleapis.com/compute/v1/projects/{{env.project}}/regions/{{properties.region}}/instanceGroups/wrkld-mig-frontend
+      balancingMode: CONNECTION
+    healthChecks:
+    - $(ref.wrkld-hc-tcp80.selfLink)
+  metadata:
+    dependsOn:
+    - wrkld-mig-frontend
+
+- name: wrkld-ilb-frontend
+  type: compute.v1.forwardingRule
+  properties:
+    region: {{properties.region}}
+    loadBalancingScheme: INTERNAL
+    IPProtocol: TCP
+    ports:
+    - 8080
+    network: {{properties.frontendVpc}}
+    subnetwork: {{properties.frontendSubnet}}
+    backendService: $(ref.wrkld-bes-frontend.selfLink)
+    serviceLabel: prx
+
+
+- name: wrkld-hc-tcp80
+  type: compute.v1.healthCheck
+  properties:
+    type: HTTP
+    checkIntervalSec: 15
+    timeoutSec: 10
+    unhealthyThreshold: 2
+    httpHealthCheck:
+      port: 80
+
+- name: wrkld-tmpl-backend
+  type: compute.v1.instanceTemplate
+  properties:
+    properties:
+      machineType: e2-standard-2
+      scheduling:
+        preemptible: true
+      disks:
+      - deviceName: boot
+        type: PERSISTENT
+        boot: true
+        initializeParams:
+          sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
+      networkInterfaces:
+      - network: {{properties.backendVpc}}
+        subnetwork: {{properties.backendSubnet}}
+      tags:
+        items:
+        - backend
+      serviceAccounts:
+      - email: default
+        scopes:
+        - https://www.googleapis.com/auth/logging.write
+        - https://www.googleapis.com/auth/monitoring.write
+      metadata:
+        items:
+        - key: startup-script
+          value: |
+            apt-get remove nginx-common nginx-core -y
+            apt-get update -o "APT::Update::Error-Mode=any" && apt-get install npm -y || (echo "APT ERROR REBOOTING"; sleep 20; reboot)
+            mkdir /opt/web
+            cd /opt/web
+            npm install koa
+            ME=$(curl -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/name")
+            ZONE=$(curl -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/zone | cut -d '/' -f 4)
+            cat <<EOT > index.js
+            const Koa = require('koa');
+            const app = new Koa();
+            app.use( async (ctx, next) => {
+              ctx.body = \`<html><body><pre>
+               ---------------------------              --------------------------------
+              | From: \${String(ctx.request.header['x-real-ip']).padEnd(19,' ')} |    __ \\\\    |  To: \${'$ME'.padEnd(25,' ')} |
+              | Via:  \${String(ctx.request.ip).padEnd(19,' ')} |    -- /    |  Zone: \${'$ZONE'.padEnd(23,' ')} |
+               ---------------------------              --------------------------------
+              </pre></body></html>\`;
+            })
+            app.listen( 80 );
+            EOT
+            node .
+
+
+- name: wrkld-mig-backend
+  type: compute.v1.regionInstanceGroupManager
+  metadata:
+  properties:
+    region: {{properties.region}}
+    instanceTemplate: $(ref.wrkld-tmpl-backend.selfLink)
+    baseInstanceName: wrkld-backend-websrv
+    targetSize: 2
+    autoHealingPolicies:
+    - healthCheck: $(ref.wrkld-hc-tcp80.selfLink)
+      initialDelaySec: 120
+
+- name: wrkld-bes-backend
+  type: compute.v1.regionBackendService
+  properties:
+    region: {{properties.region}}
+    loadBalancingScheme: INTERNAL
+    backends:
+    - group: https://www.googleapis.com/compute/v1/projects/{{env.project}}/regions/{{properties.region}}/instanceGroups/wrkld-mig-backend
+      balancingMode: CONNECTION
+    healthChecks:
+    - $(ref.wrkld-hc-tcp80.selfLink)
+  metadata:
+    dependsOn:
+    - wrkld-mig-backend
+
+- name: wrkld-ilb-backend
+  type: compute.v1.forwardingRule
+  properties:
+    region: {{properties.region}}
+    loadBalancingScheme: INTERNAL
+    IPProtocol: TCP
+    ports:
+    - 80
+    network: {{properties.backendVpc}}
+    subnetwork: {{properties.backendSubnet}}
+    backendService: $(ref.wrkld-bes-backend.selfLink)
+    serviceLabel: app
