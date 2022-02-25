@@ -1,5 +1,45 @@
 resources:
-- name: wrkld-tmpl-frontend-proxy
+# DNS peering for workload flexibility
+- name: wrkld-dnspeer-spoke2-spoke1-{{properties.shortRegion}}
+  type: dns.v1.managedZone
+  properties:
+    dnsName: "wrkld-ilb-backend-{{properties.shortRegion}}.il4.{{properties.region}}.lb.{{env.project}}.internal."
+    description: ""
+    peeringConfig:
+      targetNetwork:
+        networkUrl: $(ref.wrkld-spoke2-vpc-{{properties.shortRegion}}.selfLink)
+    privateVisibilityConfig:
+      networks:
+      - networkUrl: $(ref.wrkld-spoke1-vpc-{{properties.shortRegion}}.selfLink)
+    visibility: private
+- name: wrkld-dnspeer-spoke1-hub-{{properties.shortRegion}}
+  type: dns.v1.managedZone
+  properties:
+    dnsName: "wrkld-ilb-frontend-{{properties.shortRegion}}.il4.{{properties.region}}.lb.{{env.project}}.internal."
+    description: ""
+    peeringConfig:
+      targetNetwork:
+        networkUrl: $(ref.wrkld-spoke1-vpc-{{properties.shortRegion}}.selfLink)
+    privateVisibilityConfig:
+      networks:
+      - networkUrl: $(ref.untrust-vpc-global.selfLink)
+    visibility: private
+- name: wrkld-dnspeer-spoke2-hub-{{properties.shortRegion}}
+  type: dns.v1.managedZone
+  properties:
+    dnsName: "wrkld-ilb-backend-{{properties.shortRegion}}.il4.{{properties.region}}.lb.{{env.project}}.internal."
+    description: ""
+    peeringConfig:
+      targetNetwork:
+        networkUrl: $(ref.wrkld-spoke1-vpc-{{properties.shortRegion}}.selfLink)
+    privateVisibilityConfig:
+      networks:
+      - networkUrl: $(ref.untrust-vpc-global.selfLink)
+    visibility: private
+
+## Frontend
+#  Simple nginx proxy forwarding traffic on 8080 to backend ILB
+- name: wrkld-tmpl-frontend-proxy-{{properties.shortRegion}}
   type: compute.v1.instanceTemplate
   properties:
     properties:
@@ -32,7 +72,7 @@ resources:
               listen 8080;
               location / {
               proxy_set_header X-Real-IP \$remote_addr;
-              proxy_pass http://app.wrkld-ilb-backend.il4.{{properties.region}}.lb.{{env.project}}.internal;
+              proxy_pass http://app.wrkld-ilb-backend-{{properties.shortRegion}}.il4.{{properties.region}}.lb.{{env.project}}.internal;
               }
             }" > /etc/nginx/sites-available/proxy.conf
             ln -s /etc/nginx/sites-available/proxy.conf /etc/nginx/sites-enabled/proxy
@@ -40,36 +80,36 @@ resources:
             ln -sf /dev/console /var/log/nginx/access.log
             service nginx restart
 
-- name: wrkld-mig-frontend
+- name: wrkld-mig-frontend-{{properties.shortRegion}}
   type: compute.v1.regionInstanceGroupManager
   metadata:
     dependsOn:
-    - wrkld-ilb-backend
-    - wrkld-dnspeer-spoke2-spoke1
+    - wrkld-ilb-backend-{{properties.shortRegion}}
+    - wrkld-dnspeer-spoke2-spoke1-{{properties.shortRegion}}
   properties:
     region: {{properties.region}}
-    instanceTemplate: $(ref.wrkld-tmpl-frontend-proxy.selfLink)
+    instanceTemplate: $(ref.wrkld-tmpl-frontend-proxy-{{properties.shortRegion}}.selfLink)
     baseInstanceName: wrkld-frontend-prx
     targetSize: 2
     autoHealingPolicies:
-    - healthCheck: $(ref.wrkld-hc-tcp80.selfLink)
+    - healthCheck: $(ref.wrkld-hc-{{properties.shortRegion}}-tcp80.selfLink)
       initialDelaySec: 50
 
-- name: wrkld-bes-frontend
+- name: wrkld-bes-frontend-{{properties.shortRegion}}
   type: compute.v1.regionBackendService
   properties:
     region: {{properties.region}}
     loadBalancingScheme: INTERNAL
     backends:
-    - group: https://www.googleapis.com/compute/v1/projects/{{env.project}}/regions/{{properties.region}}/instanceGroups/wrkld-mig-frontend
+    - group: https://www.googleapis.com/compute/v1/projects/{{env.project}}/regions/{{properties.region}}/instanceGroups/wrkld-mig-frontend-{{properties.shortRegion}}
       balancingMode: CONNECTION
     healthChecks:
-    - $(ref.wrkld-hc-tcp80.selfLink)
+    - $(ref.wrkld-hc-{{properties.shortRegion}}-tcp80.selfLink)
   metadata:
     dependsOn:
-    - wrkld-mig-frontend
+    - wrkld-mig-frontend-{{properties.shortRegion}}
 
-- name: wrkld-ilb-frontend
+- name: wrkld-ilb-frontend-{{properties.shortRegion}}
   type: compute.v1.forwardingRule
   properties:
     region: {{properties.region}}
@@ -79,11 +119,11 @@ resources:
     - 8080
     network: {{properties.frontendVpc}}
     subnetwork: {{properties.frontendSubnet}}
-    backendService: $(ref.wrkld-bes-frontend.selfLink)
+    backendService: $(ref.wrkld-bes-frontend-{{properties.shortRegion}}.selfLink)
     serviceLabel: prx
 
 
-- name: wrkld-hc-tcp80
+- name: wrkld-hc-{{properties.shortRegion}}-tcp80
   type: compute.v1.healthCheck
   properties:
     type: HTTP
@@ -93,7 +133,9 @@ resources:
     httpHealthCheck:
       port: 80
 
-- name: wrkld-tmpl-backend
+## Backend
+#  Simple nodejs app printing connection info
+- name: wrkld-tmpl-backend-{{properties.shortRegion}}
   type: compute.v1.instanceTemplate
   properties:
     properties:
@@ -144,33 +186,33 @@ resources:
             node .
 
 
-- name: wrkld-mig-backend
+- name: wrkld-mig-backend-{{properties.shortRegion}}
   type: compute.v1.regionInstanceGroupManager
   metadata:
   properties:
     region: {{properties.region}}
-    instanceTemplate: $(ref.wrkld-tmpl-backend.selfLink)
+    instanceTemplate: $(ref.wrkld-tmpl-backend-{{properties.shortRegion}}.selfLink)
     baseInstanceName: wrkld-backend-websrv
     targetSize: 2
     autoHealingPolicies:
-    - healthCheck: $(ref.wrkld-hc-tcp80.selfLink)
+    - healthCheck: $(ref.wrkld-hc-{{properties.shortRegion}}-tcp80.selfLink)
       initialDelaySec: 120
 
-- name: wrkld-bes-backend
+- name: wrkld-bes-backend-{{properties.shortRegion}}
   type: compute.v1.regionBackendService
   properties:
     region: {{properties.region}}
     loadBalancingScheme: INTERNAL
     backends:
-    - group: https://www.googleapis.com/compute/v1/projects/{{env.project}}/regions/{{properties.region}}/instanceGroups/wrkld-mig-backend
+    - group: https://www.googleapis.com/compute/v1/projects/{{env.project}}/regions/{{properties.region}}/instanceGroups/wrkld-mig-backend-{{properties.shortRegion}}
       balancingMode: CONNECTION
     healthChecks:
-    - $(ref.wrkld-hc-tcp80.selfLink)
+    - $(ref.wrkld-hc-{{properties.shortRegion}}-tcp80.selfLink)
   metadata:
     dependsOn:
-    - wrkld-mig-backend
+    - wrkld-mig-backend-{{properties.shortRegion}}
 
-- name: wrkld-ilb-backend
+- name: wrkld-ilb-backend-{{properties.shortRegion}}
   type: compute.v1.forwardingRule
   properties:
     region: {{properties.region}}
@@ -180,5 +222,5 @@ resources:
     - 80
     network: {{properties.backendVpc}}
     subnetwork: {{properties.backendSubnet}}
-    backendService: $(ref.wrkld-bes-backend.selfLink)
+    backendService: $(ref.wrkld-bes-backend-{{properties.shortRegion}}.selfLink)
     serviceLabel: app

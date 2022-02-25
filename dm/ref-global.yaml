@@ -1,0 +1,189 @@
+imports:
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/beta/FortiGate/modules-dm/fgcp-ha-ap-multilb.jinja
+  name: fgcp-ha-ap-multilb.jinja
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/FortiGate/architectures/300-peered-security-hub/deployment-manager/peerings.jinja
+  name: peerings.jinja
+- path: ref-regional-fgts.jinja
+- path: networks.jinja
+- path: workload.jinja
+
+# Update and uncomment 4 lines below to deploy with your own licenses
+- path: ../licence1.lic
+  name: lic1.lic
+- path: ../licence2.lic
+  name: lic2.lic
+- path: ../lic1.lic
+  name: lic3.lic
+- path: ../lic2.lic
+  name: lic4.lic
+
+resources:
+# Create a set of sample VPC networks and subnets
+- type: networks.jinja
+  name: Networks
+  properties:
+    region: europe-west1
+    shortRegion: euwest1
+    region2: us-east1
+    shortRegion2: useast1
+
+# Peerings resource will peer all the VPCs together creating a hub-and-spoke topology
+- name: Peerings EU
+  type: peerings.jinja
+  properties:
+    prefix: wrkld
+    hub:
+      name: trust-vpc-euwest1
+      url: $(ref.trust-vpc-euwest1.selfLink)
+    spokes:
+    - name: wrkld-spoke1-vpc-euwest1
+      url: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    - name: wrkld-spoke2-vpc-euwest1
+      url: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+    deleteSpokeDefaultRoutes: true #this will trigger deletion of existing default route from spoke VPCs
+# Explicit dependencies are needed as peerings cannot be created in parallel with custom routes
+# native deployment manager explicit dependencies are nto supported for nested templates, so we need to emulate
+    dependsOn:
+    - fgt-eu-trust-vpc-rt-to-wrkld-euwest1-via-fgt
+    - fgt-eu-trust-vpc-rt-to-onprem-via-fgt
+    - fgt-eu-trust-vpc-rt-default-via-fgt
+
+- name: Peerings US
+  type: peerings.jinja
+  properties:
+    prefix: wrkld
+    hub:
+      name: trust-vpc-useast1
+      url: $(ref.trust-vpc-useast1.selfLink)
+    spokes:
+    - name: wrkld-spoke1-vpc-useast1
+      url: $(ref.wrkld-spoke1-vpc-useast1.selfLink)
+    - name: wrkld-spoke2-vpc-useast1
+      url: $(ref.wrkld-spoke2-vpc-useast1.selfLink)
+    deleteSpokeDefaultRoutes: true #this will trigger deletion of existing default route from spoke VPCs
+# Explicit dependencies are needed as peerings cannot be created in parallel with custom routes
+# native deployment manager explicit dependencies are nto supported for nested templates, so we need to emulate
+    dependsOn:
+    - fgt-us-trust-vpc-rt-to-wrkld-useast1-via-fgt
+    - fgt-us-trust-vpc-rt-to-onprem-via-fgt
+    - fgt-us-trust-vpc-rt-default-via-fgt
+
+# This section will deploy an A-P HA cluster of FortiGates in LB sandwich
+- name: FortiGates_EU
+  type: ref-regional-fgts.jinja
+  properties:
+    region: europe-west1
+    shortRegion: euwest1
+    prefix: fgt-eu
+    licenses:
+    - lic1.lic
+    - lic2.lic
+    cidrRanges:
+      untrust: 172.20.0.0/25
+      trust: 172.20.1.0/25
+      hasync: 172.20.2.0/25
+      mgmt: 172.20.3.0/25
+      onprem: 192.168.0.0/16
+      wrkld: 10.0.0.0/9
+      psa: 10.127.0.0/16
+    trustGateway: $(ref.trust-sb-euwest1.gatewayAddress)
+
+- name: FortiGates_US
+  type: ref-regional-fgts.jinja
+  properties:
+    region: us-east1
+    shortRegion: useast1
+    prefix: fgt-us
+    licenses:
+    - lic3.lic
+    - lic4.lic
+    cidrRanges:
+      untrust: 172.20.0.128/25
+      trust: 172.20.1.128/25
+      hasync: 172.20.2.128/25
+      mgmt: 172.20.3.128/25
+      onprem: 192.168.0.0/16
+      wrkld: 10.128.0.0/9
+      psa: 10.255.0.0/16
+    trustGateway: $(ref.trust-sb-useast1.gatewayAddress)
+
+- name: Workload
+  type: workload.jinja
+  properties:
+    region: europe-west1
+    shortRegion: euwest1
+    frontendVpc: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    frontendSubnet: $(ref.wrkld-spoke1-sb-euwest1.selfLink)
+    backendVpc: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+    backendSubnet: $(ref.wrkld-spoke2-sb-euwest1.selfLink)
+
+- name: Workload_US
+  type: workload.jinja
+  properties:
+    region: us-east1
+    shortRegion: useast1
+    frontendVpc: $(ref.wrkld-spoke1-vpc-useast1.selfLink)
+    frontendSubnet: $(ref.wrkld-spoke1-sb-useast1.selfLink)
+    backendVpc: $(ref.wrkld-spoke2-vpc-useast1.selfLink)
+    backendSubnet: $(ref.wrkld-spoke2-sb-useast1.selfLink)
+
+- name: fgt-glb-fwdrule
+  type: compute.v1.globalForwardingRule
+  properties:
+    IPProtocol: TCP
+    portRange: 80-80
+    loadBalancingScheme: EXTERNAL
+    target: $(ref.fgt-glb-httpproxy.selfLink)
+- name: fgt-glb-httpproxy
+  type: compute.v1.targetHttpProxy
+  properties:
+    urlMap: $(ref.fgt-glb-urlmap.selfLink)
+- name: fgt-glb-urlmap
+  type: compute.v1.urlMap
+  properties:
+    defaultService: $(ref.fgt-glb-bes.selfLink)
+- name: fgt-glb-bes
+  type: compute.v1.backendService
+  properties:
+    loadBalancingScheme: EXTERNAL
+    port: 80
+    protocol: HTTP
+    portName: http
+    enableCDN: false
+    healthChecks:
+    - $(ref.fgt-global-hc-tcp8008.selfLink)
+    backends:
+    - balancingMode: RATE
+      maxRate: 9999
+      group: $(ref.fgt-eu-hagroup0.selfLink)
+    - balancingMode: RATE
+      maxRate: 9999
+      group: $(ref.fgt-eu-hagroup1.selfLink)
+    - balancingMode: RATE
+      maxRate: 9999
+      group: $(ref.fgt-us-hagroup0.selfLink)
+    - balancingMode: RATE
+      maxRate: 9999
+      group: $(ref.fgt-us-hagroup1.selfLink)
+- name: fgt-global-hc-tcp8008
+  type: compute.v1.healthCheck
+  properties:
+    type: HTTP
+    httpHealthCheck:
+      port: 8008
+      checkIntervalSec: 4
+      timeoutSec: 2
+      unhealthyThreshold: 2
+      healthyThreshold: 1
+
+outputs:
+- name: GLB Address
+  value: $(ref.fgt-glb-fwdrule.IPAddress)
+- name: EU Cluster - Temporary Admin Password
+  value: $(ref.FortiGates_EU.defaultPassword)
+- name: EU Cluster - Management IPs
+  value: $(ref.FortiGates_EU.mgmtPublicIPs)
+- name: EU Cluster - Regional Web Service IP
+  value: $(ref.fgt-eu-serv1.address)
+- name: US Cluster - Regional Web Service IP
+  value: $(ref.fgt-us-serv1.address)

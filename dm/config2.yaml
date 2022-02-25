@@ -3,8 +3,6 @@ imports:
   name: fgcp-ha-ap-multilb.jinja
 - path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/FortiGate/architectures/300-peered-security-hub/deployment-manager/peerings.jinja
   name: peerings.jinja
-- path: networks.jinja
-- path: workload.jinja
 
 # Update and uncomment 4 lines below to deploy with your own licenses
 - path: ../licence1.lic
@@ -13,12 +11,92 @@ imports:
   name: lic2.lic
 
 resources:
-# Create a set of sample VPC networks and subnets
-- type: networks.jinja
-  name: Networks
+# Create a sample set of VPC Networks with subnets.
+# this helper template can also create 2 sample spoke VPCs
+# You will not need it if you re-use this configuration with your VPCs
+- name: untrust-vpc-global
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: untrust-sb-euwest1
+  type: compute.v1.subnetwork
   properties:
     region: europe-west1
-    shortRegion: euwest1
+    network: $(ref.untrust-vpc-global.selfLink)
+    ipCidrRange: 172.20.0.0/24
+
+- name: trust-vpc-euwest1
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: trust-sb-euwest1
+  type: compute.v1.subnetwork
+  properties:
+    region: europe-west1
+    network: $(ref.trust-vpc-euwest1.selfLink)
+    ipCidrRange: 172.20.1.0/24
+
+- name: fgt-hasync-vpc
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: fgt-hasync-sb-euwest1
+  type: compute.v1.subnetwork
+  properties:
+    region: europe-west1
+    network: $(ref.fgt-hasync-vpc.selfLink)
+    ipCidrRange: 172.20.2.0/24
+
+- name: fgt-mgmt-vpc
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: fgt-mgmt-sb-euwest1
+  type: compute.v1.subnetwork
+  properties:
+    region: europe-west1
+    network: $(ref.fgt-mgmt-vpc.selfLink)
+    ipCidrRange: 172.20.3.0/24
+
+- name: wrkld-spoke1-vpc-euwest1
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: wrkld-spoke1-sb-euwest1
+  type: compute.v1.subnetwork
+  properties:
+    region: europe-west1
+    network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    ipCidrRange: 10.0.1.0/24
+- name: wrkld-spoke1-euwest1-allowall
+  type: compute.v1.firewall
+  properties:
+    network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+    priority: 100
+    sourceRanges:
+    - 0.0.0.0/0
+    allowed:
+    - IPProtocol: all
+
+- name: wrkld-spoke2-vpc-euwest1
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: wrkld-spoke2-sb-euwest1
+  type: compute.v1.subnetwork
+  properties:
+    region: europe-west1
+    network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+    ipCidrRange: 10.0.2.0/24
+- name: wrkld-spoke2-euwest1-allowall
+  type: compute.v1.firewall
+  properties:
+    network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+    priority: 100
+    sourceRanges:
+    - 0.0.0.0/0
+    allowed:
+    - IPProtocol: all
 
 # Peerings resource will peer all the VPCs together creating a hub-and-spoke topology
 - name: Peerings
@@ -92,6 +170,7 @@ resources:
       ipCidrRange: 172.20.3.0/24
       externalIP:
         name: mgmt
+# Add routes for spoke1 and spoke2 networks to FortiGates internal routing table
     fwConfig: |
       config router static
         edit 11
@@ -99,10 +178,6 @@ resources:
           set device port2
           set gateway 172.20.1.1
         next
-      end
-      config system dns
-        set primary 169.254.169.254
-        unset secondary
       end
       config firewall address
         edit "wrkld-spoke1-sb-euwest1"
@@ -129,23 +204,12 @@ resources:
           set color 17
           set filter "Tag=backend"
         next
-        edit "gcp-ilb-backend"
-          set type fqdn
-          set fqdn "app.wrkld-ilb-backend.il4.europe-west1.lb.forti-emea-se.internal"
-          set color 17
-        next
-        edit "wrkld-ilb-frontend"
-          set type fqdn
-          set fqdn "prx.wrkld-ilb-frontend.il4.europe-west1.lb.forti-emea-se.internal"
-          set color 17
-        next
       end
       config firewall vip
         edit "serv1-to-frontend"
           set extip $(ref.fgt-serv1.address)
-          set type fqdn
-          set extintf "port1"
-          set mapped-addr "wrkld-ilb-frontend"
+          set mappedip "10.0.1.5"
+          set extintf "any"
           set portforward enable
           set extport 80
           set mappedport 8080
@@ -179,7 +243,7 @@ resources:
           set dstintf "port2"
           set action accept
           set srcaddr "gcp-frontend"
-          set dstaddr "gcp-ilb-backend"
+          set dstaddr "gcp-backend"
           set schedule "always"
           set service "ALL"
           set utm-status enable
@@ -207,17 +271,93 @@ resources:
       end
 
 # example web server and a proxy
-
-
-- name: Workload
-  type: workload.jinja
+- name: wrkld-vm-frontend
+  type: compute.v1.instance
+  metadata:
+    dependsOn:
+    - fgt-fgt1
+    - fgt-trust-vpc-ilb
+    - fgt-trust-vpc-rt-default-via-fgt
   properties:
-    region: europe-west1
-    shortRegion: euwest1
-    frontendVpc: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
-    frontendSubnet: $(ref.wrkld-spoke1-sb-euwest1.selfLink)
-    backendVpc: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
-    backendSubnet: $(ref.wrkld-spoke2-sb-euwest1.selfLink)
+    zone: europe-west1-b
+    machineType: zones/europe-west1-b/machineTypes/e2-micro
+    disks:
+    - deviceName: boot
+      type: PERSISTENT
+      boot: true
+      initializeParams:
+        sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
+    networkInterfaces:
+    - network: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
+      subnetwork: $(ref.wrkld-spoke1-sb-euwest1.selfLink)
+      networkIP: 10.0.1.5
+    tags:
+      items:
+      - frontend
+    metadata:
+      items:
+      - key: startup-script
+        value: |
+          apt update
+          apt install nginx -y
+          echo "server {
+            listen 8080;
+            location / {
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_pass http://10.0.2.5;
+            }
+          }" > /etc/nginx/sites-available/proxy.conf
+          ln -s /etc/nginx/sites-available/proxy.conf /etc/nginx/sites-enabled/proxy
+
+- name: wrkld-vm-backend
+  type: compute.v1.instance
+  metadata:
+    dependsOn:
+    - fgt-fgt1
+    - fgt-trust-vpc-ilb
+    - fgt-trust-vpc-rt-default-via-fgt
+  properties:
+    zone: europe-west1-b
+    machineType: zones/europe-west1-b/machineTypes/e2-micro
+    disks:
+    - deviceName: boot
+      type: PERSISTENT
+      boot: true
+      initializeParams:
+        sourceImage: https://www.googleapis.com/compute/v1/projects/ubuntu-os-cloud/global/images/family/ubuntu-2004-lts
+    networkInterfaces:
+    - network: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
+      subnetwork: $(ref.wrkld-spoke2-sb-euwest1.selfLink)
+      networkIP: 10.0.2.5
+    tags:
+      items:
+      - backend
+    metadata:
+      items:
+      - key: startup-script
+        value: |
+          apt update
+          apt remove nginx-common nginx-core -y
+          apt install npm -y
+          mkdir /opt/web
+          cd /opt/web
+          npm install koa
+          ME=$(curl -H "Metadata-Flavor: Google" "http://169.254.169.254/computeMetadata/v1/instance/name")
+          ZONE=$(curl -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/zone | cut -d '/' -f 4)
+          cat <<EOT > index.js
+          const Koa = require('koa');
+          const app = new Koa();
+          app.use( async (ctx, next) => {
+            ctx.body = \`<html><body><pre>
+             ---------------------------              -----------------------
+            | From: \${ctx.request.header['x-real-ip'].padEnd(19,' ')} |    __ \\\\    |  To: \${'$ME'.padEnd(16,' ')} |
+            | Via:  \${ctx.request.ip.padEnd(19,' ')} |    -- /    |  Zone: \${'$ZONE'.padEnd(13,' ')} |
+             ---------------------------              -----------------------
+            </pre></body></html>\`;
+          })
+          app.listen( 80 );
+          EOT
+          node .
 
 outputs:
 - name: Temporary Admin Password

@@ -1,0 +1,11 @@
+imports:
+- path: usecase-ingress.jinja
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/beta/FortiGate/modules-dm/fgcp-ha-ap-multilb.jinja
+  name: fgcp-ha-ap-multilb.jinja
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/FortiGate/modules-dm/utils-sample-vpcs.jinja
+  name: utils-sample-vpcs.jinja
+
+properties:
+  region:
+    type: string
+    default: europe-west3

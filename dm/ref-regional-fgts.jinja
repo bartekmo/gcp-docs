@@ -1,103 +1,65 @@
 imports:
 - path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/beta/FortiGate/modules-dm/fgcp-ha-ap-multilb.jinja
   name: fgcp-ha-ap-multilb.jinja
-- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/FortiGate/architectures/300-peered-security-hub/deployment-manager/peerings.jinja
-  name: peerings.jinja
-- path: networks.jinja
-- path: workload.jinja
 
-# Update and uncomment 4 lines below to deploy with your own licenses
-- path: ../licence1.lic
-  name: lic1.lic
-- path: ../licence2.lic
-  name: lic2.lic
+{% set prefix = properties.prefix | default("fgt-"~properties.shortRegion) %}
 
 resources:
-# Create a set of sample VPC networks and subnets
-- type: networks.jinja
-  name: Networks
-  properties:
-    region: europe-west1
-    shortRegion: euwest1
-
-# Peerings resource will peer all the VPCs together creating a hub-and-spoke topology
-- name: Peerings
-  type: peerings.jinja
-  properties:
-    prefix: wrkld
-    hub:
-      name: trust-vpc-euwest1
-      url: $(ref.trust-vpc-euwest1.selfLink)
-    spokes:
-    - name: wrkld-spoke1-vpc-euwest1
-      url: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
-    - name: wrkld-spoke2-vpc-euwest1
-      url: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
-    deleteSpokeDefaultRoutes: true #this will trigger deletion of existing default route from spoke VPCs
-# Explicit dependencies are needed as peerings cannot be created in parallel with custom routes
-# native deployment manager explicit dependencies are nto supported for nested templates, so we need to emulate
-    dependsOn:
-    - fgt-trust-vpc-rt-to-wrkld-euwest1-via-fgt
-    - fgt-trust-vpc-rt-to-onprem-via-fgt
-    - fgt-trust-vpc-rt-default-via-fgt
-
 # This section will deploy an A-P HA cluster of FortiGates in LB sandwich
-- name: My_FortiGate_Cluster
+- name: FGT-HA-AP
   type: fgcp-ha-ap-multilb.jinja
   properties:
-    prefix: fgt # optional. defaults to deployment name
+    prefix: {{prefix}}
     zones:
-    - europe-west1-b
-    - europe-west1-c
+    - {{properties.region}}-b
+    - {{properties.region}}-c
     instanceType: e2-standard-4 #optional. defaults to e2-standard-4
     license: #optional. default: payg
       type: byol
 # Uncomment the lics section below to refer to your own BYOL licenses
-      lics:
-      - lic1.lic
-      - lic2.lic
+      lics: {{properties.licenses}}
     serialPortEnable: false
     networks:
     # Replace vpcLink, subnetLink URLs and adapt ipCidrRange CIDRs for all networks
     # in this section if reusing this configuration with your existing VPCs
     - name: untrust-vpc
       vpcLink: $(ref.untrust-vpc-global.selfLink)
-      subnetLink: $(ref.untrust-sb-euwest1.selfLink)
-      ipCidrRange: 172.20.0.0/24
+      subnetLink: $(ref.untrust-sb-{{properties.shortRegion}}.selfLink)
+      ipCidrRange: {{properties.cidrRanges.untrust}}
       serviceIPs: # this section triggers creation of ELB and EIP
       - name: serv1
       routes: # this section triggers creation of ILB
-      - destRange: 10.0.0.0/9
-        name: to-wrkld-euwest1
-      - destRange: 10.127.0.0/16
-        name: to-psa-euwest1
+      - destRange: {{properties.cidrRanges.wrkld}}
+        name: to-wrkld-{{properties.shortRegion}}
+      - destRange: {{properties.cidrRanges.psa}}
+        name: to-psa-{{properties.shortRegion}}
     - name: trust-vpc
-      vpcLink: $(ref.trust-vpc-euwest1.selfLink)
-      subnetLink: $(ref.trust-sb-euwest1.selfLink)
-      ipCidrRange: 172.20.1.0/24
+      vpcLink: $(ref.trust-vpc-{{properties.shortRegion}}.selfLink)
+      subnetLink: $(ref.trust-sb-{{properties.shortRegion}}.selfLink)
+      ipCidrRange: {{properties.cidrRanges.trust}}
       routes:
       - destRange: 0.0.0.0/0
         name: default
-      - destRange: 192.168.0.0/16
+      - destRange: {{properties.cidrRanges.onprem}}
         name: to-onprem
-      - destRange: 10.0.0.0/9
-        name: to-wrkld-euwest1
+      - destRange: {{properties.cidrRanges.wrkld}}
+        name: to-wrkld-{{properties.shortRegion}}
     - name: hasync
       vpcLink: $(ref.fgt-hasync-vpc.selfLink)
-      subnetLink: $(ref.fgt-hasync-sb-euwest1.selfLink)
-      ipCidrRange: 172.20.2.0/24
+      subnetLink: $(ref.fgt-hasync-sb-{{properties.shortRegion}}.selfLink)
+      ipCidrRange: {{properties.cidrRanges.hasync}}
     - name: management
       vpcLink: $(ref.fgt-mgmt-vpc.selfLink)
-      subnetLink: $(ref.fgt-mgmt-sb-euwest1.selfLink)
-      ipCidrRange: 172.20.3.0/24
+      subnetLink: $(ref.fgt-mgmt-sb-{{properties.shortRegion}}.selfLink)
+      ipCidrRange: {{properties.cidrRanges.mgmt}}
       externalIP:
         name: mgmt
     fwConfig: |
       config router static
         edit 11
-          set dst 10.0.0.0/9
+          set dst {{properties.cidrRanges.wrkld}}
           set device port2
-          set gateway 172.20.1.1
+          set gateway {{properties.trustGateway}}
         next
       end
       config system dns
@@ -105,17 +67,17 @@ resources:
         unset secondary
       end
       config firewall address
-        edit "wrkld-spoke1-sb-euwest1"
+        edit "wrkld-spoke1-sb-{{properties.shortRegion}}"
           set type dynamic
           set sdn "gcp_conn"
           set color 17
-          set filter "Subnet=wrkld-spoke1-sb-euwest1"
+          set filter "Subnet=wrkld-spoke1-sb-{{properties.shortRegion}}"
         next
-        edit "wrkld-spoke2-sb-euwest1"
+        edit "wrkld-spoke2-sb-{{properties.shortRegion}}"
           set type dynamic
           set sdn "gcp_conn"
           set color 17
-          set filter "Subnet=wrkld-spoke2-sb-euwest1"
+          set filter "Subnet=wrkld-spoke2-sb-{{properties.shortRegion}}"
         next
         edit "gcp-frontend"
           set type dynamic
@@ -131,24 +93,33 @@ resources:
         next
         edit "gcp-ilb-backend"
           set type fqdn
-          set fqdn "app.wrkld-ilb-backend.il4.europe-west1.lb.forti-emea-se.internal"
+          set fqdn "app.wrkld-ilb-backend-{{properties.shortRegion}}.il4.{{properties.region}}.lb.{{env.project}}.internal"
           set color 17
         next
         edit "wrkld-ilb-frontend"
           set type fqdn
-          set fqdn "prx.wrkld-ilb-frontend.il4.europe-west1.lb.forti-emea-se.internal"
+          set fqdn "prx.wrkld-ilb-frontend-{{properties.shortRegion}}.il4.{{properties.region}}.lb.{{env.project}}.internal"
           set color 17
         next
       end
       config firewall vip
         edit "serv1-to-frontend"
-          set extip $(ref.fgt-serv1.address)
+          set extip $(ref.{{prefix}}-serv1.address)
           set type fqdn
           set extintf "port1"
           set mapped-addr "wrkld-ilb-frontend"
           set portforward enable
           set extport 80
           set mappedport 8080
+        next
+        edit "glb-to-frontend"
+          set extip 0.0.0.0
+          set type fqdn
+          set extintf "port1"
+          set mapped-addr "wrkld-ilb-frontend"
+          set portforward enable
+          set extport 80
+          set mappedport 80
         next
       end
       config firewall policy
@@ -157,7 +128,7 @@ resources:
           set srcintf "port2"
           set dstintf "port1"
           set action accept
-          set srcaddr "wrkld-spoke1-sb-euwest1" "wrkld-spoke2-sb-euwest1"
+          set srcaddr "wrkld-spoke1-sb-{{properties.shortRegion}}" "wrkld-spoke2-sb-{{properties.shortRegion}}"
           set dstaddr "all"
           set schedule "always"
           set service "ALL"
@@ -170,7 +141,7 @@ resources:
           set application-list "default"
           set nat enable
           set ippool enable
-          set poolname "fgt-serv1"
+          set poolname "{{prefix}}-serv1"
           set logtraffic all
         next
         edit 2
@@ -204,25 +175,30 @@ resources:
           set ips-sensor "default"
           set logtraffic all
         next
+        edit 3
+          set name "glb-to-frontend-tcp80-allow"
+          set srcintf "port1"
+          set dstintf "port2"
+          set action accept
+          set srcaddr "all"
+          set dstaddr "glb-to-frontend"
+          set schedule "always"
+          set service "ALL"
+          set utm-status enable
+          set ssl-ssh-profile "certificate-inspection"
+          set av-profile "default"
+          set ips-sensor "default"
+          set logtraffic all
+        next
+      end
+      config system interface
+        edit port1
+          append allowaccess probe-response
+        next
       end
 
-# example web server and a proxy
-
-
-- name: Workload
-  type: workload.jinja
-  properties:
-    region: europe-west1
-    shortRegion: euwest1
-    frontendVpc: $(ref.wrkld-spoke1-vpc-euwest1.selfLink)
-    frontendSubnet: $(ref.wrkld-spoke1-sb-euwest1.selfLink)
-    backendVpc: $(ref.wrkld-spoke2-vpc-euwest1.selfLink)
-    backendSubnet: $(ref.wrkld-spoke2-sb-euwest1.selfLink)
-
 outputs:
-- name: Temporary Admin Password
-  value: $(ref.My_FortiGate_Cluster.defaultPassword)
-- name: Management IPs
-  value: $(ref.My_FortiGate_Cluster.mgmtPublicIPs)
-- name: Web Service IP
-  value: $(ref.fgt-serv1.address)
+- name: defaultPassword
+  value: $(ref.FGT-HA-AP.defaultPassword)
+- name: mgmtPublicIPs
+  value: $(ref.FGT-HA-AP.mgmtPublicIPs)

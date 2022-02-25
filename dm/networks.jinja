@@ -8,7 +8,7 @@ resources:
   properties:
     region: {{properties.region}}
     network: $(ref.untrust-vpc-global.selfLink)
-    ipCidrRange: 172.20.0.0/24
+    ipCidrRange: 172.20.0.0/25
 
 - name: trust-vpc-{{properties.shortRegion}}
   type: compute.v1.network
@@ -19,7 +19,7 @@ resources:
   properties:
     region: {{properties.region}}
     network: $(ref.trust-vpc-{{properties.shortRegion}}.selfLink)
-    ipCidrRange: 172.20.1.0/24
+    ipCidrRange: 172.20.1.0/25
 
 - name: fgt-hasync-vpc
   type: compute.v1.network
@@ -30,7 +30,7 @@ resources:
   properties:
     region: {{properties.region}}
     network: $(ref.fgt-hasync-vpc.selfLink)
-    ipCidrRange: 172.20.2.0/24
+    ipCidrRange: 172.20.2.0/25
 
 - name: fgt-mgmt-vpc
   type: compute.v1.network
@@ -41,7 +41,7 @@ resources:
   properties:
     region: {{properties.region}}
     network: $(ref.fgt-mgmt-vpc.selfLink)
-    ipCidrRange: 172.20.3.0/24
+    ipCidrRange: 172.20.3.0/25
 
 - name: wrkld-spoke1-vpc-{{properties.shortRegion}}
   type: compute.v1.network
@@ -82,3 +82,74 @@ resources:
     - 0.0.0.0/0
     allowed:
     - IPProtocol: all
+
+{% if "region2" in properties %}
+- name: untrust-sb-{{properties.shortRegion2}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region2}}
+    network: $(ref.untrust-vpc-global.selfLink)
+    ipCidrRange: 172.20.0.128/25
+- name: trust-vpc-{{properties.shortRegion2}}
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: trust-sb-{{properties.shortRegion2}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region2}}
+    network: $(ref.trust-vpc-{{properties.shortRegion2}}.selfLink)
+    ipCidrRange: 172.20.1.128/25
+- name: fgt-hasync-sb-{{properties.shortRegion2}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region2}}
+    network: $(ref.fgt-hasync-vpc.selfLink)
+    ipCidrRange: 172.20.2.128/25
+- name: fgt-mgmt-sb-{{properties.shortRegion2}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region2}}
+    network: $(ref.fgt-mgmt-vpc.selfLink)
+    ipCidrRange: 172.20.3.128/25
+
+- name: wrkld-spoke1-vpc-{{properties.shortRegion2}}
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: wrkld-spoke1-sb-{{properties.shortRegion2}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region2}}
+    network: $(ref.wrkld-spoke1-vpc-{{properties.shortRegion2}}.selfLink)
+    ipCidrRange: 10.128.1.0/24
+- name: wrkld-spoke1-{{properties.shortRegion2}}-allowall
+  type: compute.v1.firewall
+  properties:
+    network: $(ref.wrkld-spoke1-vpc-{{properties.shortRegion2}}.selfLink)
+    priority: 100
+    sourceRanges:
+    - 0.0.0.0/0
+    allowed:
+    - IPProtocol: all
+
+- name: wrkld-spoke2-vpc-{{properties.shortRegion2}}
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: wrkld-spoke2-sb-{{properties.shortRegion2}}
+  type: compute.v1.subnetwork
+  properties:
+    region: {{properties.region2}}
+    network: $(ref.wrkld-spoke2-vpc-{{properties.shortRegion2}}.selfLink)
+    ipCidrRange: 10.128.2.0/24
+- name: wrkld-spoke2-{{properties.shortRegion2}}-allowall
+  type: compute.v1.firewall
+  properties:
+    network: $(ref.wrkld-spoke2-vpc-{{properties.shortRegion2}}.selfLink)
+    priority: 100
+    sourceRanges:
+    - 0.0.0.0/0
+    allowed:
+    - IPProtocol: all
+{% endif %}

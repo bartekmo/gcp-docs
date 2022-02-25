@@ -1,0 +1,57 @@
+{% set prefix = properties.prefix | default(env.deployment) %}
+
+
+resources:
+{#}
+{% for eip in properties.publicAddresses %}
+- name: {{prefix}}-{{eip.name}}
+  type: compute.v1.address
+  properties:
+    region: us-central1
+{% endfor %}
+{#}
+outputs:
+- name: publicAddresses
+  value:
+  {%- for eip in properties.publicAddresses %}
+  - name: {{ eip.name }}
+  {%- endfor %}
+- name: fwConfig
+  value: |
+    {% for eip in properties.publicAddresses if 'backendFqdn' in eip %}
+    config firewall address
+      edit "{{prefix}}-{{eip.name}}"
+        set type fqdn
+        set fqdn "{{eip.backendFqdn}}"
+        set color 17
+      next
+    end
+    config firewall vip
+      edit "serv1-to-frontend"
+        set extip $(ref.{{prefix}}-{{eip.name}}.address)
+        set type fqdn
+        set extintf "port1"
+        set mapped-addr "{{prefix}}-{{eip.name}}"
+        set portforward enable
+        set extport {{eip.extport | default(80)}}
+        set mappedport {{eip.mappedport | default(80)}}
+      next
+    end
+    config firewall policy
+      edit 0
+        set name "{{eip.name}}-to-{{eip.backendFqdn.split('.')[0]}}-tcp80-allow"
+        set srcintf "port1"
+        set dstintf "port2"
+        set action accept
+        set srcaddr "all"
+        set dstaddr "serv1-to-frontend"
+        set schedule "always"
+        set service "ALL"
+        set utm-status enable
+        set ssl-ssh-profile "certificate-inspection"
+        set av-profile "default"
+        set ips-sensor "default"
+        set logtraffic all
+      next
+    end
+    {% endfor %}

@@ -1,0 +1,22 @@
+imports:
+#- path: /Users/bartekmo/GitHub/40net-cloud/fortinet-gcp-solutions/FortiGate/architectures/300-peered-security-hub/deployment-manager/peerings.jinja
+- path: https://raw.githubusercontent.com/40net-cloud/fortinet-gcp-solutions/master/FortiGate/architectures/300-peered-security-hub/deployment-manager/peerings.jinja
+  name: peerings.jinja
+
+# Update and uncomment 4 lines below to deploy with your own licenses
+
+
+resources:
+# Create a sample set of VPC Networks with subnets.
+# this helper template can also create 2 sample spoke VPCs
+# You will not need it if you re-use this configuration with your VPCs
+- name: untrusted-vpc-global
+  type: compute.v1.network
+  properties:
+    autoCreateSubnetworks: false
+- name: untrusted-sb-euwest1
+  type: compute.v1.subnetwork
+  properties:
+    region: europe-west1
+    network: $(ref.untrusted-vpc-global.selfLink)
+    ipCidrRange: 172.20.0.0/24

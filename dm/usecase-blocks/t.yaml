@@ -1,0 +1,10 @@
+imports:
+- path: play.jinja
+
+resources:
+- name: Reference
+  type: play.jinja
+
+outputs:
+- name: Reference
+  value: $(ref.Reference)
