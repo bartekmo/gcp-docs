@@ -1,6 +1,6 @@
 
 module "peer1" {
-  source = "../modules/usecases/add-spoke-vpc"
+  source = "../modules/usecases/spoke-vpc"
 
   day0 = data.terraform_remote_state.base.outputs
   vpc_name = "bm-spoke1"
