@@ -33,19 +33,6 @@ resource "google_compute_network_peering" "spoke_to_hub" {
   ]
 }
 
-resource "google_compute_route" "spoke_route" {
-  for_each             = local.spoke_ip_cidr_ranges
-  name = join( "-", ["${var.day0.prefix}rt", replace( split("/", each.key)[0], ".","-"), "via", "fgt" ])
-  dest_range = each.key
-  network = var.day0.internal_vpc
-  next_hop_ilb = var.day0.ilb
-  priority = 100
-
-  depends_on  = [
-    google_compute_network_peering.spoke_to_hub
-  ]
-}
-
 resource "fortios_router_static" "to_spoke_subnets" {
   for_each             = local.spoke_ip_cidr_ranges
   dst                  = each.key
