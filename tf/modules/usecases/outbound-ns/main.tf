@@ -18,17 +18,16 @@ resource "fortios_firewall_ippool" "this" {
 resource "fortios_firewall_policy" "allowout" {
   name = "${var.name}-allowout"
   action = "accept"
-  schedule = "always"
   inspection_mode = "flow"
   status = "enable"
   utm_status = "enable"
-  application_list = "default"
-  av_profile = "default"
-  ips_sensor = "default"
-  webfilter_profile = "default"
-  ssl_ssh_profile = "certificate-inspection"
-
-  logtraffic = "all"
+  schedule = var.schedule
+  application_list = var.application_list
+  av_profile = var.av_profile
+  ips_sensor = var.ips_sensor
+  webfilter_profile = var.webfilter_profile
+  ssl_ssh_profile = var.ssl_ssh_profile
+  logtraffic = var.logtraffic
 
   srcintf {
     name = "port2"
@@ -37,13 +36,13 @@ resource "fortios_firewall_policy" "allowout" {
     name = "port1"
   }
   srcaddr {
-    name = "all"
+    name = var.srcaddr
   }
   dstaddr {
-    name = "all"
+    name = var.dstaddr
   }
   service {
-    name = "ALL"
+    name = var.service
   }
   nat = "enable"
   ippool = "enable"

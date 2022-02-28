@@ -23,6 +23,11 @@ config system sdn-connector
         set ha-status enable
     next
 end
+config system dns
+  set primary 169.254.169.254
+  set protocol cleartext
+  unset secondary
+end
 config system ha
     set group-name "gcp-group"
     set mode a-p
