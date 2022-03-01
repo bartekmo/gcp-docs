@@ -530,12 +530,12 @@ ssh admin@$EIP_MGMT "config router static
 edit 200
 set dst 35.191.0.0/16
 set device port2
-set gateway 172.20.1.1
+set gateway $(gcloud compute networks subnets describe trust-sb-$REGION_LABEL --region=$REGION --format="value(gatewayAddress)")
 next
 edit 201
 set dst 130.211.0.0/22
 set device port2
-set gateway 172.20.1.1
+set gateway $(gcloud compute networks subnets describe trust-sb-$REGION_LABEL --region=$REGION --format="value(gatewayAddress)")
 next
 end"
 
