@@ -14,8 +14,37 @@ East-west inspection in GCP can be provided only for traffic between VPC Network
 5. Connection matches trusted VPC peered subnet route and gets delivered over VPC peering to destination VPC
 
 ## How to deploy
-Routing between spoke VPCs relies on the default (0.0.0.0/0) custom route already added to the trusted VPC by the base (day0) deployment. All properly peered VPC Networks will pass traffic via FortiGate (unless also peered directly with destination network). To enable east-west scanning use the [spoke-vpc](modules/usecases/spoke-vpc) module for creating peerings.
+Routing between spoke VPCs relies on the default (0.0.0.0/0) custom route already added to the trusted VPC by the base (day0) deployment. All properly peered VPC Networks will pass traffic via FortiGate (unless also peered directly with destination network).
 
-This module does not create firewall policies - you have to make sure the traffic is allowed on the firewall yourself.
+To enable east-west scanning use the [spoke-vpc](modules/usecases/spoke-vpc) module for creating peerings.
 
-Note: due to GCP limitations on parallel peering operations you might encounter errors when deploying this module as for the clarity of code it limits explicit depends_on arguments. If you encounter any errors just try again.
+The following arguments are required for the module:
+- `day0` - map of day0 remote state outputs. You'll have to create a data.terraform_remote_state object and pass its outputs to this argument
+- `vpc_name` - name of spoke VPC to be peered with FortiGate
+- `vpc_project` - name of the project hosting the spoke VPC
+
+Example:
+```
+module "tier1" {
+  source      = "../modules/usecases/spoke-vpc"
+
+  day0        = data.terraform_remote_state.base.outputs
+  vpc_name    = "vpc-tier1"
+  vpc_project = "prj-workloads"
+}
+
+module "tier2" {
+  source      = "../modules/usecases/spoke-vpc"
+
+  day0        = data.terraform_remote_state.base.outputs
+  vpc_name    = "vpc-tier2"
+  vpc_project = "prj-workloads"
+  depends_on  = [
+    module.tier1
+  ]
+}
+```
+
+**Note 1**: *This module does not create firewall policies - you have to make sure the traffic is allowed on the firewall yourself.*
+
+**Note 2**: *due to GCP limitations on parallel peering operations you might encounter errors when deploying this module as for the clarity of code it limits explicit depends_on arguments. If you encounter any errors just try again.*

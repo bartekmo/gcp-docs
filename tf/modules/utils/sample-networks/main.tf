@@ -20,3 +20,7 @@ output "vpcs" {
 output "subnets" {
   value = google_compute_subnetwork.subnets[*].self_link
 }
+
+output "subnet_names" {
+  value = google_compute_subnetwork.subnets[*].name
+}

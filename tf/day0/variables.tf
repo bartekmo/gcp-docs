@@ -16,7 +16,7 @@ variable GCE_REGION {
 variable "prefix" {
   type = string
   description = "Prefix to be added to the names of all created resources"
-  default = "fgt"
+  default = "fgt-"
 }
 
 provider "google" {

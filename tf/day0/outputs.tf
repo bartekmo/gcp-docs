@@ -3,7 +3,7 @@
 # in day1 (via remote state)
 #
 
-output "fgt-vm-eip" {
+output "fgt-mgmt-eips" {
   value = module.fortigates.fgt_mgmt_eips
 }
 
