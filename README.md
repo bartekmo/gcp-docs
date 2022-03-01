@@ -8,7 +8,8 @@
 
 ## Deployment with gcloud
 ### create
-Edit oneregion.sh to change region/zones and simply run it. Changing of CIDRs is currently not supported
+Edit oneregion.sh to change region/zones and simply run it.
+CIDRs can be changed by modifying variables at the beginning of the script.
 
 ### destroy
 1. run makedestroy script to scan the oneregion.sh for used resource names and generate oneregion-destroy.sh script
