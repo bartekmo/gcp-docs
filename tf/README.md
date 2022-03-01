@@ -3,6 +3,8 @@
 
 This repo contains terraform modules to deploy and manage FortiGate reference architecture in Google Cloud. It uses both Google Cloud as well as FortiOS providers to demonstrate high agility of managing FortiGate appliances together with cloud using IaC approach.
 
+![Reference architecture overview](https://lucid.app/publicSegments/view/076586e7-f57f-4117-8a64-4b41810d3bc3/image.png)
+
 The templates are split into [day0](day0/) and [day1](day1/) folders, which should be deployed as separate configurations.
 
 * Day0 - deploys a cluster of FortiGates into GCP and connects them to 4 subnets. The subnets might be created before and their **names** be provided to the fgcp-ha-ap-lb module in `subnets` variable, or the VPCs and subnets can be created using sample-networks module as demonstrated in the code. Day0 "base" deployment does not offer any network functionality and is simply a foundation required by all Day1 modules.
