@@ -1,4 +1,4 @@
-# Auto-discover custom service account
+# Auto-discover custom service account created using service_account_create.sh
 data google_service_account fgt {
   account_id = "fortigatesdn-ro"
 }
@@ -10,22 +10,14 @@ module "fortigates" {
   region          = var.GCE_REGION
   service_account = data.google_service_account.fgt.email != null ? data.google_service_account.fgt.email : ""
 
-  subnets         = [
-    "bm-log-ext-sb",
-    "bm-int-sb",
-    "bm-hasync-log-sb",
-    "bm-mgmt-log-sb"
-  ]
-
   # Use the below subnet names if you create new networks using sample_networks or update to your own
   # Remember to use subnet list as names. No selfLinks, please
-/*   subnets = [
+   subnets = [
      "${var.prefix}sb-external",
      "${var.prefix}sb-internal",
      "${var.prefix}sb-hasync",
      "${var.prefix}sb-mgmt"
    ]
-*/
 
   license_files   = [
     "../../lic1.lic",
